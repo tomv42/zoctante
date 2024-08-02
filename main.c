@@ -1,3 +1,4 @@
+#include "./raylib/include/raylib.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,9 +26,23 @@ typedef struct State8080 {
     uint8_t *memory;
     struct ConditionCodes cc;
     uint8_t int_enable;
+    uint32_t iteration_number;
 } State8080;
 
-State8080 *init_state_8080() {
+typedef struct SpaceInvadersMachine {
+    struct State8080 *state;
+    uint8_t shift_high;
+    uint8_t shift_low;
+    uint8_t shift_offset;
+} SpaceInvadersMachine;
+
+SpaceInvadersMachine *init_machine(void) {
+    SpaceInvadersMachine *machine = malloc(sizeof(*machine));
+    memset(machine, 0, sizeof(*machine));
+    return machine;
+}
+
+State8080 *init_state_8080(void) {
     State8080 *state = malloc(sizeof(*state));
     memset(state, 0, sizeof(*state));
     uint8_t *memory = calloc(1 << 16, 1);
@@ -40,6 +55,12 @@ State8080 *init_state_8080() {
     state->sp = 0xf000;
 
     return state;
+}
+
+void print_state(State8080 *state) {
+    printf("\tCY=%d, P=%d, S=%d, Z=%d, I=%d\n", state->cc.cy, state->cc.p, state->cc.s, state->cc.z, state->int_enable);
+    printf("\tA=%02x, BC=%02x%02x, DE=%02x%02x, HL=%02x%02x\n", state->a, state->b, state->c, state->d, state->e, state->h, state->l);
+    printf("\tPC=%04x, SP=%04x\n", state->pc, state->sp);
 }
 
 /*
@@ -873,6 +894,9 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
 
 void UnimplementedInstruction(State8080 *state) {
     printf("Error: Unimplemented instruction\n");
+    printf("iteration: %d", state->iteration_number - 1);
+    print_state(state);
+    Disassemble8080Op(state->memory, state->pc - 1); // make sure to decrease pc
     exit(1);
 }
 
@@ -901,6 +925,7 @@ flags:
 void Emulate8080Op(State8080 *state) {
     unsigned char *opcode = &state->memory[state->pc];
 
+    state->iteration_number += 1;
     state->pc += 1; // for the opcode
 
     switch (*opcode) {
@@ -1114,7 +1139,7 @@ void Emulate8080Op(State8080 *state) {
     case 0x34:
         UnimplementedInstruction(state);
         break;
-    case 0x35:
+    case 0x35: // DCR M
         UnimplementedInstruction(state);
         break;
     case 0x36: // MVI M, data
@@ -1838,12 +1863,6 @@ void Emulate8080Op(State8080 *state) {
     }
 }
 
-void print_state(State8080 *state) {
-    printf("\tCY=%d, P=%d, S=%d, Z=%d, I=%d\n", state->cc.cy, state->cc.p, state->cc.s, state->cc.z, state->int_enable);
-    printf("\tA=%02x, BC=%02x%02x, DE=%02x%02x, HL=%02x%02x\n", state->a, state->b, state->c, state->d, state->e, state->h, state->l);
-    printf("\tPC=%04x, SP=%04x\n", state->pc, state->sp);
-}
-
 void read_rom_into_memory(State8080 *state, char *filename, uint16_t offset) {
     FILE *f = fopen(filename, "rb");
     if (f == NULL) {
@@ -1862,23 +1881,127 @@ void read_rom_into_memory(State8080 *state, char *filename, uint16_t offset) {
     fclose(f);
 }
 
+void EmulateMachineIn(SpaceInvadersMachine *machine, uint8_t port) {
+    State8080 *state = machine->state;
+    state->pc += 2; // opcode + port
+    switch (port) {
+    case 0:
+        state->a = 1; // play in attract mode TODO: find where this value comes from
+        break;
+    case 1:
+        state->a = 0; // play in attract mode
+        break;
+    case 3: {
+        uint16_t v = (machine->shift_high << 8) | machine->shift_low;
+        state->a = ((v >> (8 - machine->shift_offset)) & 0xff);
+    } break;
+    }
+    return;
+}
+
+void EmulateMachineOut(SpaceInvadersMachine *machine, uint8_t port) {
+    State8080 *state = machine->state;
+    state->pc += 2; // opcode + port
+    switch (port) {
+    case 2:
+        machine->shift_offset = state->a;
+        break;
+    case 4:
+        machine->shift_low = machine->shift_high;
+        machine->shift_high = state->a;
+        break;
+    }
+    return;
+}
+
+void GenerateInterrupt(State8080 *state, int interrupt_number) {
+    state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+    state->memory[state->sp - 1] = state->pc & 0xff;
+    state->sp -= 2;
+    state->pc = 8 * interrupt_number;
+}
+
+#define IN (0xdb)
+#define OUT (0xd3)
+
 int main() {
 
     State8080 *state = init_state_8080();
     read_rom_into_memory(state, "space-invaders.rom", 0x0000);
     print_state(state);
 
-    uint32_t max_iter = 100000;
-    /* uint32_t max_iter = 40147; they agree */
-    /* uint32_t max_iter = 40205; */
-    uint32_t n = 0;
+    SpaceInvadersMachine *machine = init_machine();
+    machine->state = state;
 
-    while (n++ < max_iter) {
-        printf("n=%d\n", n);
-        (void)Disassemble8080Op(state->memory, state->pc);
-        Emulate8080Op(state);
-        print_state(state);
+    unsigned char *opcode;
+
+    int width = 800;
+    int height = 450;
+
+    InitWindow(width, height, "zoctante - space invaders");
+
+    // 2400-3FFF 7K video RAM
+    uint8_t *screen_buffer = &state->memory[0x2400];
+
+    // The raster resolution is 256x224 at 60Hz
+    // The monitor is rotated in the cabinet 90 degrees counter-clockwise
+    Image image = {
+        .format = (int)PIXELFORMAT_UNCOMPRESSED_GRAYSCALE,
+        .mipmaps = 1,
+        .width = 256,
+        .height = 224,
+        .data = screen_buffer,
+    };
+    printf("Loaded image\n");
+    // no need to call UnloadImage
+
+    Texture2D texture = LoadTextureFromImage(image);
+    printf("Loaded Texture\n");
+
+    BeginDrawing();
+    ClearBackground(RAYWHITE);
+    DrawTexture(texture, (width - 256) / 2, (height - 224) / 2, WHITE);
+    EndDrawing();
+
+    double time_since_last_interrupt = 0.0;
+    double interrupt_time = 0.0;
+
+    while (!WindowShouldClose()) {
+        // Generate screen interrupts
+        time_since_last_interrupt = GetTime() - interrupt_time;
+        if (time_since_last_interrupt > 1.0 / 60.0) {
+            printf("Generating Interrupt\n");
+            // If I understand this right then the system gets RST 8 when the beam is *near* the middle of the screen
+            // and RST 10 when it is at the end (start of VBLANK).
+            GenerateInterrupt(state, 2);
+
+            // Draw on interrupt
+            LoadTextureFromImage(image);
+
+            BeginDrawing();
+            ClearBackground(RAYWHITE);
+            DrawTexture(texture, (width - 256) / 2, (height - 224) / 2, WHITE);
+            EndDrawing();
+
+            UnloadTexture(texture);
+            interrupt_time = GetTime();
+        }
+
+        // Emulate
+        opcode = &state->memory[state->pc];
+        if (*opcode == IN) {
+            uint8_t port = opcode[1];
+            EmulateMachineIn(machine, port);
+        } else if (*opcode == OUT) {
+            uint8_t port = opcode[1];
+            EmulateMachineOut(machine, port);
+        } else {
+            /* Disassemble8080Op(state->memory, state->pc); */
+            /* print_state(state); */
+            Emulate8080Op(state);
+        }
     }
 
+    CloseWindow();
     return 0;
 }
