@@ -5,7 +5,7 @@
 #include <string.h>
 
 #define CPUDIAG 0
-#define TEST 1
+#define TEST 0
 
 typedef struct ConditionCodes {
     uint8_t z : 1;
@@ -265,7 +265,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         printf("NOP");
         break;
     case 0x39:
-        printf("DAP SP");
+        printf("DAD SP");
         break;
     case 0x3a:
         printf("LDA $%02x%02x", code[2], code[1]);
@@ -892,7 +892,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         printf("RST 7");
         break;
     }
-    printf("\n");
+    printf(" %02x\n", code[0]);
 
     return opbytes;
 }
@@ -904,6 +904,56 @@ void UnimplementedInstruction(State8080 *state) {
     Disassemble8080Op(state->memory, state->pc - 1); // make sure to decrease pc
     exit(1);
 }
+void EmulateMachineIn(SpaceInvadersMachine *machine, uint8_t port) {
+    State8080 *state = machine->state;
+    state->pc += 2; // opcode + port
+    switch (port) {
+    case 0:
+        state->a = 1; // play in attract mode TODO: find where this value comes from
+        break;
+    case 1:
+        state->a = 0; // play in attract mode
+        break;
+    case 3: {
+        uint16_t v = (machine->shift_high << 8) | machine->shift_low;
+        state->a = ((v >> (8 - machine->shift_offset)) & 0xff);
+    } break;
+    }
+    return;
+}
+
+void EmulateMachineOut(SpaceInvadersMachine *machine, uint8_t port) {
+    State8080 *state = machine->state;
+    state->pc += 2; // opcode + port
+    switch (port) {
+    case 0:
+        state->test_finished = 1;
+        break;
+    case 1: {
+        uint8_t operation = state->c;
+
+        if (operation == 2) { // print a character stored in E
+            printf("%c", state->e);
+        } else if (operation == 9) { // print from memory at (DE) until '$' char
+            uint16_t addr = (state->d << 8) | state->e;
+            do {
+                /* printf("%c", rb(state, addr++)); */
+                printf("%c", state->memory[addr++]);
+
+                /* } while (rb(state, addr) != '$'); */
+            } while (state->memory[addr] != '$');
+        }
+    } break;
+    case 2:
+        machine->shift_offset = state->a;
+        break;
+    case 4:
+        machine->shift_low = machine->shift_high;
+        machine->shift_high = state->a;
+        break;
+    }
+    return;
+}
 
 uint16_t Parity(uint16_t x) {
     uint16_t sum = 0;
@@ -913,6 +963,17 @@ uint16_t Parity(uint16_t x) {
     }
     return (sum % 2 == 0);
 }
+
+/* uint16_t Parity(uint16_t x) { */
+/*     int i; */
+/*     int p = 0; */
+/*     for (i = 0; i < 16; i++) { */
+/*         if (x & 0x1) */
+/*             p++; */
+/*         x = x >> 1; */
+/*     } */
+/*     return (0 == (p & 0x1)); */
+/* } */
 
 uint16_t opcode_data(unsigned char *opcode) {
     return (opcode[2] << 8) | opcode[1];
@@ -937,8 +998,8 @@ void Emulate8080Op(State8080 *state) {
     case 0x00: // NOP
         break;
     case 0x01: // LXI B, data 16
-        state->c = opcode[1];
         state->b = opcode[2];
+        state->c = opcode[1];
         state->pc += 2;
         break;
     case 0x02: // STAX B
@@ -949,17 +1010,25 @@ void Emulate8080Op(State8080 *state) {
     } break;
     case 0x03: // INX B
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint32_t answer = ((state->b << 8) | state->c) + 1;
+        state->b = (answer >> 8) & 0xff;
+        state->c = answer & 0xff;
+    } break;
     case 0x04: // INR B
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->b + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->b = answer;
+    } break;
     case 0x05: // DCR B
     {
         uint8_t answer = state->b - 1;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.p = Parity(answer & 0xff);
         state->b = answer;
     } break;
@@ -977,8 +1046,8 @@ void Emulate8080Op(State8080 *state) {
     {
         uint32_t answer = (state->h << 8) | state->l;
         answer += (state->b << 8) | state->c;
-        state->cc.cy = (answer > 0xffff);
-        state->h = (answer >> 8) & 0xff;
+        state->cc.cy = (answer & 0xffff0000) != 0;
+        state->h = (answer & 0xff00) >> 8;
         state->l = answer & 0xff;
     } break;
     case 0x0a: // LDAX B
@@ -994,13 +1063,18 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0x0c: // INR C
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->c + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->c = answer;
+    } break;
     case 0x0d: // DCR C
     {
         uint8_t answer = state->c - 1;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.p = Parity(answer & 0xff);
         state->c = answer;
     } break;
@@ -1010,9 +1084,9 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0x0f: // RRC
     {
-        uint8_t a0 = state->a & 0x01;
-        state->cc.cy = a0;
-        state->a = (state->a >> 1) | (a0 << 7);
+        uint8_t a = state->a;
+        state->cc.cy = ((a & 1) == 1);
+        state->a = (a >> 1) | ((a & 1) << 7);
     } break;
     case 0x10: // NOP
         break;
@@ -1031,13 +1105,18 @@ void Emulate8080Op(State8080 *state) {
                // NOTE: Do nothing on overflow
     {
         uint32_t answer = ((state->d << 8) | state->e) + 1;
-        state->d = (answer >> 8) & 0xff;
+        state->d = (answer & 0xff00) >> 8;
         state->e = answer & 0xff;
     } break;
     case 0x14: // INR D
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->d + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->d = answer;
+    } break;
     case 0x15: // DCR D
                // NOTE: Post interrupts
         UnimplementedInstruction(state);
@@ -1056,8 +1135,8 @@ void Emulate8080Op(State8080 *state) {
     {
         uint32_t answer = (state->h << 8) | state->l;
         answer += (state->d << 8) | state->e;
-        state->cc.cy = (answer > 0xffff);
-        state->h = (answer >> 8) & 0xff;
+        state->cc.cy = (answer & 0xffff0000) != 0;
+        state->h = (answer & 0xff00) >> 8;
         state->l = answer & 0xff;
     } break;
     case 0x1a: // LDAX D
@@ -1071,8 +1150,13 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0x1c: // INR E
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->e + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->e = answer;
+    } break;
     case 0x1d: // DCR E
                // NOTE: Post interrupts
         UnimplementedInstruction(state);
@@ -1103,13 +1187,18 @@ void Emulate8080Op(State8080 *state) {
                // NOTE: Do nothing on overflow
     {
         uint32_t answer = ((state->h << 8) | state->l) + 1;
-        state->h = (answer >> 8) & 0xff;
+        state->h = (answer & 0xff00) >> 8;
         state->l = answer & 0xff;
     } break;
     case 0x24: // INR H
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->h + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->h = answer;
+    } break;
     case 0x25: // DCR H
                // NOTE: Post interrupts
         UnimplementedInstruction(state);
@@ -1128,8 +1217,8 @@ void Emulate8080Op(State8080 *state) {
     {
         uint32_t answer = (state->h << 8) | state->l;
         answer += answer;
-        state->cc.cy = (answer > 0xffff);
-        state->h = (answer >> 8) & 0xff;
+        state->cc.cy = (answer & 0xffff0000) != 0;
+        state->h = (answer & 0xff00) >> 8;
         state->l = answer & 0xff;
     } break;
     case 0x2a: // LHLD data 16
@@ -1142,8 +1231,13 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0x2c: // INR L
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->l + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->l = answer;
+    } break;
     case 0x2d: // DCR L
                // NOTE: Post interrupts
         UnimplementedInstruction(state);
@@ -1171,19 +1265,25 @@ void Emulate8080Op(State8080 *state) {
     } break;
     case 0x33: // INX SP
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        state->sp += 1;
         break;
     case 0x34: // INR M
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        uint16_t answer = state->memory[addr] + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->memory[addr] = answer;
+    } break;
     case 0x35: // DCR M
                // NOTE: Post interrupts
     {
         uint16_t addr = (state->h << 8) | state->l;
         uint8_t answer = state->memory[addr] - 1;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.p = Parity(answer & 0xff);
     } break;
     case 0x36: // MVI M, data
@@ -1194,14 +1294,19 @@ void Emulate8080Op(State8080 *state) {
     } break;
     case 0x37: // STC
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        state->cc.cy = 1;
         break;
     case 0x38: // NOP
         break;
-    case 0x39: // DAP SP
+    case 0x39: // DAD SP
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint32_t answer = (state->h << 8) | state->l;
+        answer += state->sp;
+        state->cc.cy = (answer & 0xffff0000) != 0;
+        state->h = (answer & 0xff00) >> 8;
+        state->l = answer & 0xff;
+    } break;
     case 0x3a: // LDA data 16
     {
         uint16_t addr = (opcode[2] << 8) | opcode[1];
@@ -1214,8 +1319,13 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0x3c: // INR A
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->a = answer;
+    } break;
     case 0x3d: // DCR A
         UnimplementedInstruction(state);
         break;
@@ -1228,7 +1338,6 @@ void Emulate8080Op(State8080 *state) {
         UnimplementedInstruction(state);
         break;
     case 0x40: // MOV B,B
-        UnimplementedInstruction(state);
         break;
     case 0x41: // MOV B,C
         state->b = state->c;
@@ -1491,7 +1600,7 @@ void Emulate8080Op(State8080 *state) {
     {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->b;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
         state->a = answer & 0xff;
@@ -1501,7 +1610,7 @@ void Emulate8080Op(State8080 *state) {
     {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->c;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
         state->a = answer & 0xff;
@@ -1511,7 +1620,7 @@ void Emulate8080Op(State8080 *state) {
     {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->d;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
         state->a = answer & 0xff;
@@ -1521,7 +1630,7 @@ void Emulate8080Op(State8080 *state) {
     {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->e;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
         state->a = answer & 0xff;
@@ -1531,7 +1640,7 @@ void Emulate8080Op(State8080 *state) {
     {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->h;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
         state->a = answer & 0xff;
@@ -1541,7 +1650,7 @@ void Emulate8080Op(State8080 *state) {
     {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->l;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
         state->a = answer & 0xff;
@@ -1551,7 +1660,7 @@ void Emulate8080Op(State8080 *state) {
         uint16_t offset = (state->h << 8) | (state->l);
         uint16_t answer = (uint16_t)state->a + state->memory[offset];
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
         state->a = answer & 0xff;
@@ -1561,7 +1670,7 @@ void Emulate8080Op(State8080 *state) {
     {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->a;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
         state->a = answer & 0xff;
@@ -1694,7 +1803,7 @@ void Emulate8080Op(State8080 *state) {
     {
         uint8_t answer = state->a & state->a;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = 0;
         state->cc.p = Parity(answer & 0xff);
         state->a = answer;
@@ -1716,12 +1825,12 @@ void Emulate8080Op(State8080 *state) {
     {
         uint8_t answer = state->a ^ state->e;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = 0;
         state->cc.p = Parity(answer & 0xff);
         state->a = answer;
     } break;
-    case 0xac: // rb
+    case 0xac: // XRA H
                // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
@@ -1737,7 +1846,7 @@ void Emulate8080Op(State8080 *state) {
     {
         uint8_t answer = state->a ^ state->a;
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = 0;
         state->cc.p = Parity(answer & 0xff);
         state->a = answer;
@@ -1792,7 +1901,7 @@ void Emulate8080Op(State8080 *state) {
         {
             uint16_t answer = state->a - state->e;
             state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) != 0);
+            state->cc.s = ((answer & 0x80) == 0x80);
             state->cc.cy = (answer > 0xff);
             state->cc.p = Parity(answer & 0xff);
             state->pc += 1;
@@ -1835,9 +1944,17 @@ void Emulate8080Op(State8080 *state) {
     {
         state->pc = opcode_data(opcode);
     } break;
-    case 0xc4: // CNZ $%02x%02x
+    case 0xc4: // CNZ addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.z == 0) {
+            uint16_t next = state->pc + 2;
+            state->memory[state->sp - 1] = ((next >> 8) & 0xff);
+            state->memory[state->sp - 2] = (next & 0xff);
+            state->sp -= 2;
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
+        }
         break;
     case 0xc5: // PUSH B
         state->memory[state->sp - 1] = state->b;
@@ -1848,7 +1965,7 @@ void Emulate8080Op(State8080 *state) {
     {
         uint16_t answer = (uint16_t)state->a + (uint16_t)opcode[1];
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
         state->a = answer & 0xff;
@@ -1867,7 +1984,9 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xc9: // RET
     {
-        state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
+        /* TODO: test this */
+        /* state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]); */
+        state->pc = state->memory[state->sp] | (state->memory[state->sp + 1] << 8);
         state->sp += 2;
     } break;
     case 0xca: // JZ addr
@@ -1880,36 +1999,46 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xcb: // NOP
         break;
-    case 0xcc: // CZ $%02x%02x
+    case 0xcc: // CZ addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
-    case 0xcd: // CALL addr
-#ifdef CPUDIAG
-               // TODO: Understand this fix
-        if (5 == ((opcode[2] << 8) | opcode[1])) {
-            if (state->c == 9) {
-                uint16_t offset = (state->d << 8) | (state->e);
-                char *str = (char *)&state->memory[offset + 3]; // skip the prefix bytes
-                while (*str != '$')
-                    printf("%c", *str++);
-                printf("\n");
-            } else if (state->c == 2) {
-                // saw this in the inspected code, never saw it called
-                printf("print char routine called\n");
-            }
-        } else if (0 == ((opcode[2] << 8) | opcode[1])) {
-            exit(0);
-        } else
-#endif
-        {
+        if (state->cc.z == 1) {
             uint16_t next = state->pc + 2;
             state->memory[state->sp - 1] = ((next >> 8) & 0xff);
             state->memory[state->sp - 2] = (next & 0xff);
             state->sp -= 2;
             state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
         }
         break;
+    case 0xcd: // CALL addr
+#if 0
+               // TODO: Understand this fix
+        if (5 == ((opcode[2] << 8) | opcode[1])) {
+            if (state->c == 9) {
+                uint16_t offset = (state->d << 8) | (state->e);
+                char *str = (char *)&state->memory[offset + 3]; // skip the prefix bytes
+                printf("\nTEST OUTPUT: ");
+                while (*str != '$')
+                    printf("%c", *str++);
+                printf("\n");
+                print_state(state);
+            } else if (state->c == 2) {
+                /* // saw this in the inspected code, never saw it called */
+                /* printf("print char routine called\n"); */
+                printf("%c", state->e);
+            }
+        } else if (0 == ((opcode[2] << 8) | opcode[1])) {
+            exit(0);
+        } else
+#endif
+    {
+        uint16_t next = state->pc + 2;
+        state->memory[state->sp - 1] = ((next >> 8) & 0xff);
+        state->memory[state->sp - 2] = (next & 0xff);
+        state->sp -= 2;
+        state->pc = opcode_data(opcode);
+    } break;
     case 0xce: // ACI #$%02x
                // NOTE: Post interrupts
         UnimplementedInstruction(state);
@@ -1920,26 +2049,40 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xd0: // RNC
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.cy == 0) {
+            state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
+            state->sp += 2;
+        }
         break;
     case 0xd1: // POP D
         state->e = state->memory[state->sp];
         state->d = state->memory[state->sp + 1];
         state->sp += 2;
         break;
-    case 0xd2: // JNC
+    case 0xd2: // JNC addr
                // NOTE: Post interrupts
         if (state->cc.cy == 0) {
-            state->pc = (opcode[2] << 8) | opcode[1];
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
         }
         break;
     case 0xd3: // OUT data
                // TODO: Revisit after implementing data bus
-        state->pc += 1;
+        printf("shouldn't call OUT from the emulator\n");
+        exit(1);
         break;
-    case 0xd4: // CNC $%02x%02x
+    case 0xd4: // CNC addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.cy == 0) {
+            uint16_t next = state->pc + 2;
+            state->memory[state->sp - 1] = ((next >> 8) & 0xff);
+            state->memory[state->sp - 2] = (next & 0xff);
+            state->sp -= 2;
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
+        }
         break;
     case 0xd5: // PUSH D
         state->memory[state->sp - 1] = state->d;
@@ -1956,23 +2099,37 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xd8: // RC
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.cy == 1) {
+            state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
+            state->sp += 2;
+        }
         break;
     case 0xd9: // NOP
         break;
     case 0xda: // JC addr
                // NOTE: Post interrupts
         if (state->cc.cy == 1) {
-            state->pc = (opcode[2] << 8) | opcode[1];
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
         }
         break;
-    case 0xdb: // space-invaders.rom
+    case 0xdb: // IN port
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        printf("shouldn't call OUT from emulator\n");
+        exit(1);
         break;
-    case 0xdc: // CC $%02x%02x
+    case 0xdc: // CC addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.cy == 1) {
+            uint16_t next = state->pc + 2;
+            state->memory[state->sp - 1] = ((next >> 8) & 0xff);
+            state->memory[state->sp - 2] = (next & 0xff);
+            state->sp -= 2;
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
+        }
         break;
     case 0xdd: // NOP
         break;
@@ -1986,24 +2143,45 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xe0: // RPO
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.p == 0) {
+            state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
+            state->sp += 2;
+        }
         break;
     case 0xe1: // POP H
         state->l = state->memory[state->sp];
         state->h = state->memory[state->sp + 1];
         state->sp += 2;
         break;
-    case 0xe2: // JPO $%02x%02x
+    case 0xe2: // JPO addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.p == 0) {
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
+        }
         break;
     case 0xe3: // XTHL
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
-    case 0xe4: // CPO $%02x%02x
+    {
+        uint8_t stack_top = state->memory[state->sp];
+        state->memory[state->sp] = state->l;
+        state->l = stack_top;
+        stack_top = state->memory[state->sp + 1];
+        state->memory[state->sp + 1] = state->h;
+        state->h = stack_top;
+    } break;
+    case 0xe4: // CPO addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.p == 0) {
+            uint16_t next = state->pc + 2;
+            state->memory[state->sp - 1] = ((next >> 8) & 0xff);
+            state->memory[state->sp - 2] = (next & 0xff);
+            state->sp -= 2;
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
+        }
         break;
     case 0xe5: // PUSH H
         state->memory[state->sp - 1] = state->h;
@@ -2014,7 +2192,7 @@ void Emulate8080Op(State8080 *state) {
     {
         uint8_t answer = state->a & opcode[1];
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = 0;
         state->cc.p = Parity(answer & 0xff);
         state->a = answer;
@@ -2026,15 +2204,22 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xe8: // RPE
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.p == 1) {
+            state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
+            state->sp += 2;
+        }
         break;
     case 0xe9: // PCHL
                // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
-    case 0xea: // JPE $%02x%02x
+    case 0xea: // JPE addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.p == 0) {
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
+        }
         break;
     case 0xeb: // XCHG
     {
@@ -2046,9 +2231,17 @@ void Emulate8080Op(State8080 *state) {
         state->d = temp_h;
         state->e = temp_l;
     } break;
-    case 0xec: // CPE $%02x%02x
+    case 0xec: // CPE addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.p == 1) {
+            uint16_t next = state->pc + 2;
+            state->memory[state->sp - 1] = ((next >> 8) & 0xff);
+            state->memory[state->sp - 2] = (next & 0xff);
+            state->sp -= 2;
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
+        }
         break;
     case 0xed: // NOP
         break;
@@ -2062,7 +2255,10 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xf0: // RP
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.s == 0) {
+            state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
+            state->sp += 2;
+        }
         break;
     case 0xf1: // POP PSW
                // WARN: Not tested
@@ -2077,27 +2273,42 @@ void Emulate8080Op(State8080 *state) {
         state->a = state->memory[state->sp + 1];
         state->sp += 2;
     } break;
-    case 0xf2: // JP $%02x%02x
+    case 0xf2: // JP addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.s == 0) {
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
+        }
         break;
     case 0xf3: // DI
                // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
-    case 0xf4: // CP $%02x%02x
+    case 0xf4: // CP addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.s == 0) {
+            uint16_t next = state->pc + 2;
+            state->memory[state->sp - 1] = ((next >> 8) & 0xff);
+            state->memory[state->sp - 2] = (next & 0xff);
+            state->sp -= 2;
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
+        }
         break;
     case 0xf5: // PUSH PSW
                // WARN: Not tested
                // WARN: Not the same as tutorial101
-    {
-        state->memory[state->sp - 1] = state->a;
-        uint8_t psw = (state->cc.cy | 1 << 1 | state->cc.p << 2 | state->cc.ac << 4 | state->cc.z << 6 | state->cc.s << 7);
-        state->memory[state->sp - 2] = psw;
-        state->sp -= 2;
-    } break;
+               /* uint8_t psw = (state->cc.z | state->cc.s << 1 | state->cc.p << 2 | state->cc.cy << 3 | state->cc.ac << 4); */
+        {
+            state->memory[state->sp - 1] = state->a;
+            /* uint8_t psw = (state->cc.cy | 1 << 1 | state->cc.p << 2 | state->cc.ac << 4 | state->cc.z << 6 | state->cc.s << 7); */
+            uint8_t psw = (state->cc.z | state->cc.s << 1 | state->cc.p << 2 | state->cc.cy << 3 | state->cc.ac << 4);
+            state->memory[state->sp - 2] = psw;
+            state->sp -= 2;
+        }
+        break;
     case 0xf6: // ORI #$%02x
                // NOTE: Post interrupts
         UnimplementedInstruction(state);
@@ -2108,31 +2319,46 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xf8: // RM
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.s == 1) {
+            state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
+            state->sp += 2;
+        }
         break;
     case 0xf9: // SPHL
                // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
-    case 0xfa: // JM $%02x%02x
+    case 0xfa: // JM addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.s == 1) {
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
+        }
         break;
     case 0xfb: // EI
         state->int_enable = 1;
         break;
-    case 0xfc: // CM $%02x%02x
+    case 0xfc: // CM addr
                // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.s == 1) {
+            uint16_t next = state->pc + 2;
+            state->memory[state->sp - 1] = ((next >> 8) & 0xff);
+            state->memory[state->sp - 2] = (next & 0xff);
+            state->sp -= 2;
+            state->pc = opcode_data(opcode);
+        } else {
+            state->pc += 2;
+        }
         break;
     case 0xfd: // NOP
         break;
     case 0xfe: // CPI data
     {
-        uint16_t answer = state->a - opcode[1];
+        uint8_t answer = state->a - opcode[1];
         state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
-        state->cc.cy = (answer > 0xff);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (state->a < opcode[1]);
         state->cc.p = Parity(answer & 0xff);
         state->pc += 1;
     } break;
@@ -2161,57 +2387,6 @@ void read_rom_into_memory(State8080 *state, char *filename, uint16_t offset) {
     fclose(f);
 }
 
-void EmulateMachineIn(SpaceInvadersMachine *machine, uint8_t port) {
-    State8080 *state = machine->state;
-    state->pc += 2; // opcode + port
-    switch (port) {
-    case 0:
-        state->a = 1; // play in attract mode TODO: find where this value comes from
-        break;
-    case 1:
-        state->a = 0; // play in attract mode
-        break;
-    case 3: {
-        uint16_t v = (machine->shift_high << 8) | machine->shift_low;
-        state->a = ((v >> (8 - machine->shift_offset)) & 0xff);
-    } break;
-    }
-    return;
-}
-
-void EmulateMachineOut(SpaceInvadersMachine *machine, uint8_t port) {
-    State8080 *state = machine->state;
-    state->pc += 2; // opcode + port
-    switch (port) {
-    case 0:
-        state->test_finished = 1;
-        break;
-    case 1: {
-        uint8_t operation = state->c;
-
-        if (operation == 2) { // print a character stored in E
-            printf("%c", state->e);
-        } else if (operation == 9) { // print from memory at (DE) until '$' char
-            uint16_t addr = (state->d << 8) | state->e;
-            do {
-                /* printf("%c", rb(state, addr++)); */
-                printf("%c", state->memory[addr++]);
-
-                /* } while (rb(state, addr) != '$'); */
-            } while (state->memory[addr] != '$');
-        }
-    } break;
-    case 2:
-        machine->shift_offset = state->a;
-        break;
-    case 4:
-        machine->shift_low = machine->shift_high;
-        machine->shift_high = state->a;
-        break;
-    }
-    return;
-}
-
 void GenerateInterrupt(State8080 *state, int interrupt_number) {
     state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
     state->memory[state->sp - 1] = state->pc & 0xff;
@@ -2222,22 +2397,25 @@ void GenerateInterrupt(State8080 *state, int interrupt_number) {
     state->int_enable = 0;
 }
 
-#define IN (0xdb)
-#define OUT (0xd3)
+#define IN (0xdb)  // opcode of IN
+#define OUT (0xd3) // opcode of OUT
 
 int main() {
 #if CPUDIAG
     State8080 *state = init_state_8080();
     read_rom_into_memory(state, "cpudiag.bin", 0x100);
-    state->pc = 0x100;
 
     // TODO: Understand these fixes
+    state->pc = 0x100;
+
     // fix the first instruction to be JMP 0x100
-    state->memory[0] = 0xc3;
-    state->memory[1] = 0;
-    state->memory[2] = 0x01;
+    /* state->memory[0] = 0xc3; */
+    /* state->memory[1] = 0; */
+    /* state->memory[2] = 0x01; */
 
     // fix the stack pointer from 0x6ad to 0x7ad
+    // this 0x06 byte 112 in the code, which is
+    // byte 112 + 0x100 = 368 in memory
     state->memory[368] = 0x7;
 
     // skip DAA test
@@ -2245,16 +2423,49 @@ int main() {
     state->memory[0x59d] = 0xc2;
     state->memory[0x59e] = 0x05;
 
-    while (1) {
-        Emulate8080Op(state);
+    // inject "out 0,a" at 0x0000 (signal to stop the test)
+    state->memory[0x0000] = 0xD3;
+    state->memory[0x0001] = 0x00;
+
+    // inject "out 1,a" at 0x0005 (signal to output some characters)
+    state->memory[0x0005] = 0xD3;
+    state->memory[0x0006] = 0x01;
+    state->memory[0x0007] = 0xC9;
+
+    SpaceInvadersMachine *machine = init_machine();
+    machine->state = state;
+
+    long n = 0;
+    uint8_t *opcode;
+
+    while (!state->test_finished) {
+        if (n % 1000000 == 0) {
+            printf("n=%ld\n", n);
+        }
+        opcode = &state->memory[state->pc];
+        if (*opcode == IN) {
+            uint8_t port = opcode[1];
+            EmulateMachineIn(machine, port);
+        } else if (*opcode == OUT) {
+            uint8_t port = opcode[1];
+            EmulateMachineOut(machine, port);
+        } else {
+            /* Disassemble8080Op(state->memory, state->pc); */
+            /* print_state(state); */
+            Emulate8080Op(state);
+        }
+        n++;
     }
+
+    printf("\n");
+    Disassemble8080Op(state->memory, 0x01C2);
 
     return 0;
 #elif TEST
     State8080 *state = init_state_8080();
-    read_rom_into_memory(state, "8080PRE.COM", 0x0000);
+    read_rom_into_memory(state, "8080PRE.COM", 0x0100);
 
-    printf("Test: 8080PRE.COM");
+    printf("Test: 8080PRE.COM\n");
 
     state->pc = 0x100;
 
@@ -2267,21 +2478,39 @@ int main() {
     state->memory[0x0006] = 0x01;
     state->memory[0x0007] = 0xC9;
 
+    SpaceInvadersMachine *machine = init_machine();
+    machine->state = state;
+
     long n = 0;
+    uint8_t *opcode;
 
     while (!state->test_finished) {
-        if (n % 100000 == 0) {
+        if (n % 1000000 == 0) {
             printf("n=%ld\n", n);
         }
-        Emulate8080Op(state);
+        opcode = &state->memory[state->pc];
+        if (*opcode == IN) {
+            uint8_t port = opcode[1];
+            EmulateMachineIn(machine, port);
+        } else if (*opcode == OUT) {
+            uint8_t port = opcode[1];
+            EmulateMachineOut(machine, port);
+        } else {
+            /* Disassemble8080Op(state->memory, state->pc); */
+            /* print_state(state); */
+            Emulate8080Op(state);
+        }
         n++;
     }
+
+    Disassemble8080Op(state->memory, 0x0255);
+
+    printf("\n");
 
     return 0;
 
 #else
     State8080 *state = init_state_8080();
-    state->which_interrupt = 1;
     read_rom_into_memory(state, "space-invaders.rom", 0x0000);
     print_state(state);
 
@@ -2301,11 +2530,8 @@ int main() {
     // The raster resolution is 256x224 at 60Hz
     // The monitor is rotated in the cabinet 90 degrees counter-clockwise
     Image image = {
-        .format = (int)PIXELFORMAT_UNCOMPRESSED_GRAYSCALE,
-        .mipmaps = 1,
-        .width = 256,
-        .height = 224,
-        .data = screen_buffer,
+        /* .format = (int)PIXELFORMAT_UNCOMPRESSED_GRAYSCALE, */
+        .format = (int)PIXELFORMAT_UNCOMPRESSED_GRAYSCALE, .mipmaps = 1, .width = 256, .height = 224, .data = screen_buffer,
     };
     printf("Loaded image\n");
     // no need to call UnloadImage
@@ -2319,29 +2545,35 @@ int main() {
     EndDrawing();
 
     double time_since_last_interrupt = 0.0;
-    double interrupt_time = 1.0;
+    double interrupt_time = 2.0;
+    state->which_interrupt = 10;
+    double off = 50;
 
-    while (!WindowShouldClose()) {
+    long iteration_number = 0;
+    long max_iter = 10;
+
+    while (!WindowShouldClose() && iteration_number < max_iter) {
         // Generate screen interrupts
-        time_since_last_interrupt = GetTime() - interrupt_time;
-        if (time_since_last_interrupt > 1.0 / 60.0) {
-            printf("Generating Interrupt\n");
-            // If I understand this right then the system gets RST 8 when the beam is *near* the middle of the screen
-            // and RST 10 when it is at the end (start of VBLANK).
-            GenerateInterrupt(state, state->which_interrupt);
-            state->which_interrupt = 3 - state->which_interrupt; // alternate between 1 and 2
-
-            // Draw on interrupt
-            LoadTextureFromImage(image);
-
-            BeginDrawing();
-            ClearBackground(RAYWHITE);
-            DrawTexture(texture, (width - 256) / 2, (height - 224) / 2, WHITE);
-            EndDrawing();
-
-            UnloadTexture(texture);
-            interrupt_time = GetTime();
-        }
+        /* time_since_last_interrupt = GetTime() - interrupt_time; */
+        /* if (time_since_last_interrupt > 5.0 / 60.0) { */
+        /*     printf("Generating Interrupt\n"); */
+        /*     // If I understand this right then the system gets RST 8 when the beam is *near* the middle of the screen */
+        /*     // and RST 10 when it is at the end (start of VBLANK). */
+        /*     GenerateInterrupt(state, state->which_interrupt); */
+        /*     state->which_interrupt = 18 - state->which_interrupt; // alternate between 1 and 2 */
+        /**/
+        /*     // Draw on interrupt */
+        /*     LoadTextureFromImage(image); */
+        /**/
+        /*     BeginDrawing(); */
+        /*     ClearBackground(RAYWHITE); */
+        /*     DrawTexture(texture, (width + off - 256) / 2, (height - 224) / 2, WHITE); */
+        /*     off = 50 - off; */
+        /*     EndDrawing(); */
+        /**/
+        /*     UnloadTexture(texture); */
+        /*     interrupt_time = GetTime(); */
+        /* } */
 
         // Emulate
         opcode = &state->memory[state->pc];
@@ -2352,10 +2584,24 @@ int main() {
             uint8_t port = opcode[1];
             EmulateMachineOut(machine, port);
         } else {
-            /* Disassemble8080Op(state->memory, state->pc); */
-            /* print_state(state); */
+            Disassemble8080Op(state->memory, state->pc);
+            print_state(state);
             Emulate8080Op(state);
         }
+
+        iteration_number++;
+    }
+
+    BeginDrawing();
+    ClearBackground(BLUE);
+    DrawTexture(texture, (width - 256) / 2, (height - 224) / 2, WHITE);
+    EndDrawing();
+
+    printf("Emulation done.\n");
+
+    exit(0);
+
+    while (!WindowShouldClose()) {
     }
 
     CloseWindow();
