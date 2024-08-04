@@ -3,12 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-SpaceInvadersMachine *init_machine(void) {
-    SpaceInvadersMachine *machine = malloc(sizeof(*machine));
-    memset(machine, 0, sizeof(*machine));
-    return machine;
-}
-
 State8080 *init_state_8080(void) {
     State8080 *state = malloc(sizeof(*state));
     memset(state, 0, sizeof(*state));

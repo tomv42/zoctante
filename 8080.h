@@ -33,19 +33,9 @@ typedef struct State8080 {
     uint8_t test_finished;
 } State8080;
 
-typedef struct SpaceInvadersMachine {
-    struct State8080 *state;
-    uint8_t shift_high;
-    uint8_t shift_low;
-    uint8_t shift_offset;
-} SpaceInvadersMachine;
-
-SpaceInvadersMachine *init_machine(void);
 State8080 *init_state_8080(void);
 void print_state(State8080 *state);
 int Disassemble8080Op(unsigned char *codebuffer, int pc);
-void EmulateMachineIn(SpaceInvadersMachine *machine, uint8_t port);
-void EmulateMachineOut(SpaceInvadersMachine *machine, uint8_t port);
 void Emulate8080Op(State8080 *state);
 void read_rom_into_memory(State8080 *state, char *filename, uint16_t offset);
 
