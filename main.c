@@ -1,5 +1,6 @@
 #include "./raylib/include/raylib.h"
 #include "8080.h"
+#include "comparison.h"
 #include "i8080.h"
 #include <stdint.h>
 /* #include <stdint> */
@@ -79,85 +80,6 @@ void GenerateInterrupt(State8080 *state, int interrupt_number) {
     //"DI"
     state->int_enable = 0;
 }
-
-static State8080 *benchmark_state;
-static uint8_t *memory;
-static bool test_finished = 0;
-
-static uint8_t rb(void *userdata, uint16_t addr) {
-    return memory[addr];
-}
-
-static void wb(void *userdata, uint16_t addr, uint8_t val) {
-    memory[addr] = val;
-}
-
-static uint8_t port_in(void *userdata, uint8_t port) {
-    return 0x00;
-}
-
-static void port_out(void *userdata, uint8_t port, uint8_t value) {
-    i8080 *const c = (i8080 *)userdata;
-
-    if (port == 0) {
-        test_finished = 1;
-    } else if (port == 1) {
-        uint8_t operation = c->c;
-
-        if (operation == 2) { // print a character stored in E
-            printf("%c", c->e);
-        } else if (operation == 9) { // print from memory at (DE) until '$' char
-            uint16_t addr = (c->d << 8) | c->e;
-            do {
-                printf("%c", rb(c, addr++));
-            } while (rb(c, addr) != '$');
-        }
-    }
-}
-
-bool compare_states(i8080 *c, State8080 *state) {
-    // registers
-    if (c->pc != state->pc) {
-        printf("PC=%04x   =!=    PC=%04x\n", c->pc, state->pc);
-        return 0;
-    } else if (c->a != state->a) {
-        return 0;
-    } else if (c->b != state->b) {
-        return 0;
-    } else if (c->c != state->c) {
-        return 0;
-    } else if (c->d != state->d) {
-        return 0;
-    } else if (c->e != state->e) {
-        return 0;
-    } else if (c->h != state->h) {
-        return 0;
-    } else if (c->l != state->l) {
-        return 0;
-    } else if (c->pc != state->pc) {
-        return 0;
-    } else if (c->sp != state->sp) {
-        return 0;
-    } else if (c->sf != state->cc.s) {
-        return 0;
-    } else if (c->cf != state->cc.cy) {
-        return 0;
-    } else if (c->pf != state->cc.p) {
-        return 0;
-    } else if (c->zf != state->cc.z) {
-        return 0;
-    }
-
-    return 1;
-}
-
-void compare_memories(uint8_t *i8080_memory, uint8_t *state8080_memory) {
-    int nb_diffs = 0;
-    for (int i = 0; i < 1 << 16; i++) {
-        nb_diffs += (i8080_memory[i] != state8080_memory[i]);
-    }
-    printf("Memory differs in %d places.\n", nb_diffs);
-};
 
 void copy_screen_buffer_grayscale(uint8_t *screen_buffer, uint8_t *memory) {
     for (int i = 0; i < 256 * 224 / 8; i++) {
@@ -279,6 +201,7 @@ int main() {
     return 0;
 
 #else
+    // TODO: move this inside the init_machine function?
     State8080 *state = init_state_8080();
     /* read_rom_into_memory(state, "space-invaders.rom", 0x0000); */
     read_rom_into_memory(state, "invaders.concatenated", 0x0000);
@@ -286,27 +209,13 @@ int main() {
     SpaceInvadersMachine *machine = init_machine();
     machine->state = state;
 
-    benchmark_state = init_state_8080();
-    /* read_rom_into_memory(benchmark_state, "space-invaders.rom", 0x0000); */
-    read_rom_into_memory(benchmark_state, "invaders.concatenated", 0x0000);
-    memory = benchmark_state->memory;
-
-    i8080 *c = malloc(sizeof(*c));
-    i8080_init(c); // need to supply the read and write functions
-
-    c->userdata = c;
-    c->read_byte = rb;
-    c->write_byte = wb;
-    c->port_in = port_in;
-    c->port_out = port_out;
-
-    c->sp = 0xf000;
+    i8080 *c = init_benchmark_emulator("invaders.concatenated", 0x0000);
 
     unsigned char *opcode;
     long iteration_number = 0;
     long max_iter = 60000;
 
-    uint8_t *i8080_memory = memory;
+    uint8_t *i8080_memory = get_benchmark_memory();
     uint8_t *state8080_memory = state->memory;
 
     int scale = 4;
@@ -346,7 +255,8 @@ int main() {
     state->which_interrupt = 1;
 
     /* while (iteration_number < 60000) { */
-    while (!WindowShouldClose()) { // && iteration_number < 60000) {
+    /* while (!WindowShouldClose()) */
+    while (!WindowShouldClose() && iteration_number < 60000) {
         // Generate screen interrupts
         time_since_last_interrupt = GetTime() - interrupt_time;
         if (time_since_last_interrupt > 1.0 / 60.0) {
@@ -374,8 +284,7 @@ int main() {
 
             // Draw on RST 10 interrupt
             if (state->which_interrupt == 10) {
-                /* copy_screen_buffer_grayscale(screen_buffer, &state->memory[0x2400]); */
-                copy_screen_buffer_grayscale(screen_buffer, memory);
+                copy_screen_buffer_grayscale(screen_buffer, &state8080_memory[0x2400]);
                 /* image.format = (int)PIXELFORMAT_UNCOMPRESSED_GRAYSCALE; */
                 /* image.height = 224; */
                 /* image.width = 256; */
@@ -425,28 +334,22 @@ int main() {
 
     printf("iteration %ld\n", iteration_number);
 
-    /* copy_screen_buffer_grayscale(screen_buffer, &state->memory[0x2400]); */
+    copy_screen_buffer_grayscale(screen_buffer, &state->memory[0x2400]);
 
-    /* LoadTextureFromImage(image); */
-    // Draw on interrupt
+    LoadTextureFromImage(image);
 
-    /* image.data = screen_buffer; */
+    image.data = screen_buffer;
 
-    /* ImageRotateCCW(&image); */
-    /* ImageResize(&image, 224 * scale, 256 * scale); */
-    /* texture = LoadTextureFromImage(image); */
+    ImageRotateCCW(&image);
+    ImageResize(&image, 224 * scale, 256 * scale);
+    texture = LoadTextureFromImage(image);
 
-    /* SetTargetFPS(60); */
+    SetTargetFPS(60);
 
     while (!WindowShouldClose()) {
-        copy_screen_buffer_grayscale(screen_buffer, &state->memory[0x2400]);
-        /* image.format = (int)PIXELFORMAT_UNCOMPRESSED_GRAYSCALE; */
-        /* image.height = 224; */
-        /* image.width = 256; */
-        /* image.mipmaps = 1; */
-        image.data = screen_buffer;
-
-        texture = LoadTextureFromImage(image);
+        /* copy_screen_buffer_grayscale(screen_buffer, &state8080_memory[0x2400]); */
+        /* image.data = screen_buffer; */
+        /* texture = LoadTextureFromImage(image); */
 
         BeginDrawing();
         ClearBackground(RED);
@@ -454,13 +357,7 @@ int main() {
         DrawFPS(10, 10);
         EndDrawing();
 
-        UnloadTexture(texture);
-
-        /* BeginDrawing(); */
-        /* ClearBackground(BLUE); */
-        /* DrawTexture(texture, (width - 222 * scale) / 2, (height - 256 * scale) / 2, WHITE); */
-        /* DrawFPS(10, 10); */
-        /* EndDrawing(); */
+        /* UnloadTexture(texture); */
     }
 
     UnloadTexture(texture);
