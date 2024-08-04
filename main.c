@@ -41,7 +41,19 @@ static void execute_interrupt(State8080 *state, int interrupt_number) {
     state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
     state->memory[state->sp - 2] = state->pc & 0xff;
     state->sp -= 2;
-    state->pc = 8 * interrupt_number;
+    /* state->pc = 8 * interrupt_number; */
+
+    switch (interrupt_number) {
+    case 1:
+        state->pc = 0x08;
+        break;
+    case 2:
+        state->pc = 0x10;
+        break;
+    default:
+        printf("Interrupt %d not implemented\n", interrupt_number);
+        exit(1);
+    }
 }
 
 static void copy_screen_buffer_grayscale(uint8_t *screen_buffer, uint8_t *memory, int scale) {
@@ -116,7 +128,8 @@ int main() {
 
     double time = GetTime();
     double time_since_last_interrupt = time;
-    double interrupt_delay = 1.0 / 120.0;           // delay between two interrupts
+    // HACK: I don't know why it's not 1/120 to get 60FPS
+    double interrupt_delay = 2.0 / 120.0;           // delay between two interrupts
     double interrupt_time = time + interrupt_delay; // time of the last interrupt
     state->which_interrupt = 1;
 
@@ -165,18 +178,22 @@ int main() {
             }
             i8080_step(c);
 
-            /* if (!compare_states(c, state)) { */
-            /*     printf("\nn = %ld\n", iteration_number); */
-            /*     printf("\nStates are different after instruction:\n"); */
-            /*     Disassemble8080Op(state->memory, pc); */
-            /*     print_state_comparison(state, c); */
-            /*     exit(1); */
-            /* } */
+            if (!compare_states(c, state)) {
+                printf("\nn = %ld\n", iteration_number);
+                printf("\nStates are different after instruction:\n");
+                Disassemble8080Op(state->memory, pc);
+                print_state_comparison(state, c);
+                exit(1);
+            }
 
-            /* if (compare_memories(i8080_memory, state8080_memory) != 0) { */
-            /*     printf("\nMemories differ\n"); */
-            /*     exit(1); */
-            /* } */
+            int n = compare_memories(i8080_memory, state8080_memory);
+
+            if (n > 0) {
+                printf("\nMemories differ in %d place(s) after instruction:.\n", n);
+                Disassemble8080Op(state->memory, pc);
+                print_state_comparison(state, c);
+                exit(1);
+            }
 
             /* printf("iteration: %ld\n", iteration_number); */
             iteration_number++;

@@ -1,4 +1,4 @@
-opt = -O0
+opt = -O3
 
 
 all: zoctante test

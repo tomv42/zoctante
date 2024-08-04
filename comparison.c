@@ -16,15 +16,39 @@ static void wb(void *userdata, uint16_t addr, uint8_t val) {
 }
 
 static uint8_t port_in(void *userdata, uint8_t port) {
-    return 0x00;
+    i8080 *c = (i8080 *)userdata;
+    uint8_t value = 0xff;
+
+    switch (port) {
+    case 0:
+        break;
+    case 1:
+        // WARN: to change when implementing input
+        value = 0;
+        break;
+    case 2:
+        value = 0;
+        break;
+    case 3: {
+        uint16_t v = (c->shift_high << 8) | c->shift_low;
+        value = ((v >> (8 - c->shift_offset)) & 0xff);
+    } break;
+    default:
+        printf("Port not implemented\n");
+        exit(1);
+    }
+
+    c->a = value;
+    return value;
 }
 
 static void port_out(void *userdata, uint8_t port, uint8_t value) {
     i8080 *const c = (i8080 *)userdata;
 
-    if (port == 0) {
+    switch (port) {
+    case 0:
         test_finished = 1;
-    } else if (port == 1) {
+    case 1: {
         uint8_t operation = c->c;
 
         if (operation == 2) { // print a character stored in E
@@ -35,6 +59,14 @@ static void port_out(void *userdata, uint8_t port, uint8_t value) {
                 printf("%c", rb(c, addr++));
             } while (rb(c, addr) != '$');
         }
+    } break;
+    case 2:
+        c->shift_offset = value & 7;
+        break;
+    case 4:
+        c->shift_low = c->shift_high;
+        c->shift_high = value;
+        break;
     }
 }
 
@@ -69,6 +101,8 @@ bool compare_states(i8080 *c, State8080 *state) {
         return 0;
     } else if (c->zf != state->cc.z) {
         return 0;
+    } else if (c->hf != state->cc.ac) {
+        return 0;
     }
 
     return 1;
@@ -77,7 +111,8 @@ bool compare_states(i8080 *c, State8080 *state) {
 // returns the number of places where memory differs
 int compare_memories(uint8_t *i8080_memory, uint8_t *state8080_memory) {
     int nb_diffs = 0;
-    for (int i = 0; i < 1 << 16; i++) {
+    // only compare RAM and video RAM
+    for (int i = 0x2000; i <= 0x3fff; i++) {
         nb_diffs += (i8080_memory[i] != state8080_memory[i]);
     }
     /* printf("Memory differs in %d places.\n", nb_diffs); */

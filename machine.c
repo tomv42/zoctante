@@ -20,11 +20,12 @@ void EmulateMachineIn(SpaceInvadersMachine *machine, uint8_t port) {
     case 1:
         // TODO: implement real ports (input)
         state->a = 0;
-        state->a |= 1 << 0; // coin
-        state->a |= 1 << 1; // P2 start button
+        /* state->a |= 1 << 0; // coin */
+        /* state->a |= 1 << 1; // P2 start button */
         break;
     case 2:
         state->a = 0;
+        break;
     case 3: {
         uint16_t v = (machine->shift_high << 8) | machine->shift_low;
         state->a = ((v >> (8 - machine->shift_offset)) & 0xff);

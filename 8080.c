@@ -1,4 +1,6 @@
 #include "8080.h"
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -856,13 +858,14 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
 
 static void UnimplementedInstruction(State8080 *state) {
     printf("Error: Unimplemented instruction\n");
-    printf("iteration: %d", state->iteration_number - 1);
+    printf("iteration: %d\n", state->iteration_number - 1);
     print_state(state);
+    printf("\n");
     Disassemble8080Op(state->memory, state->pc - 1); // make sure to decrease pc
     exit(1);
 }
 
-static uint16_t Parity(uint16_t x) {
+static _Bool Parity(uint16_t x) {
     uint16_t sum = 0;
 
     for (sum = 0; x > 0; x = (x >> 1)) {
@@ -884,6 +887,12 @@ static uint16_t Parity(uint16_t x) {
 
 static uint16_t opcode_data(unsigned char *opcode) {
     return (opcode[2] << 8) | opcode[1];
+}
+
+// TODO: understand this function
+static bool AuxiliaryCarry(uint16_t answer, uint8_t a, uint8_t b) {
+    int16_t carry = answer ^ a ^ b;
+    return carry & (1 << 4);
 }
 
 /*
@@ -916,40 +925,32 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 2;
         break;
     case 0x02: // STAX B
-        UnimplementedInstruction(state);
-        // NOTE: post interrupts
-        {
-            uint16_t addr = (state->b << 8) | state->c;
-            state->memory[addr] = state->a;
-        }
-        break;
+    {
+        uint16_t addr = (state->b << 8) | state->c;
+        state->memory[addr] = state->a;
+    } break;
     case 0x03: // INX B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint32_t answer = ((state->b << 8) | state->c) + 1;
-            state->b = (answer >> 8) & 0xff;
-            state->c = answer & 0xff;
-        }
-        break;
+    {
+        uint32_t answer = ((state->b << 8) | state->c) + 1;
+        state->b = (answer >> 8) & 0xff;
+        state->c = answer & 0xff;
+    } break;
     case 0x04: // INR B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = state->b + 1;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            UnimplementedInstruction(state);
-            state->cc.p = Parity(answer & 0xff);
-            state->b = answer;
-        }
-        break;
+    {
+        uint16_t answer = state->b + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->b, 1);
+        state->b = answer;
+    } break;
     case 0x05: // DCR B
     {
         uint8_t answer = state->b - 1;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->b, ~1);
         state->b = answer;
     } break;
     case 0x06: // MVI B, data
@@ -957,9 +958,11 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 1;
         break;
     case 0x07: // RLC
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t a = state->a;
+        state->cc.cy = ((a >> 7) & 1) == 1;
+        state->a = (a << 1) | ((a >> 7) & 1);
+    } break;
     case 0x08: // NOP
         UnimplementedInstruction(state);
         break;
@@ -972,35 +975,33 @@ void Emulate8080Op(State8080 *state) {
         state->l = answer & 0xff;
     } break;
     case 0x0a: // LDAX B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t addr = (state->b << 8) | state->c;
-            state->a = state->memory[addr];
-        }
-        break;
+    {
+        uint16_t addr = (state->b << 8) | state->c;
+        state->a = state->memory[addr];
+    } break;
         break;
     case 0x0b: // DCX B
-               // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint32_t answer = ((state->b << 8) | state->c) - 1;
+        state->b = (answer >> 8) & 0xff;
+        state->c = answer & 0xff;
+    } break;
     case 0x0c: // INR C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = state->c + 1;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.p = Parity(answer & 0xff);
-            state->c = answer;
-        }
-        break;
+    {
+        uint16_t answer = state->c + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->c, 1);
+        state->c = answer;
+    } break;
     case 0x0d: // DCR C
     {
         uint8_t answer = state->c - 1;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->c, ~1);
         state->c = answer;
     } break;
     case 0x0e: // MVI C, data
@@ -1022,13 +1023,10 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 2;
         break;
     case 0x12: // STAX D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t addr = (state->d << 8) | state->e;
-            state->memory[addr] = state->a;
-        }
-        break;
+    {
+        uint16_t addr = (state->d << 8) | state->e;
+        state->memory[addr] = state->a;
+    } break;
     case 0x13: // INX D
         // NOTE: Do nothing on overflow
         {
@@ -1042,29 +1040,28 @@ void Emulate8080Op(State8080 *state) {
         }
         break;
     case 0x14: // INR D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = state->d + 1;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.p = Parity(answer & 0xff);
-            state->d = answer;
-        }
-        break;
+    {
+        uint16_t answer = state->d + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->d, 1);
+        state->d = answer;
+    } break;
     case 0x15: // DCR D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->d - 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->d, ~1);
+        state->d = answer;
+    } break;
     case 0x16: // MVI D, data
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        state->d = opcode[1];
+        state->pc += 1;
         break;
     case 0x17: // RAL
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x18: // NOP
@@ -1084,36 +1081,39 @@ void Emulate8080Op(State8080 *state) {
         state->a = state->memory[addr];
     } break;
     case 0x1b: // DCX D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint32_t answer = ((state->d << 8) | state->e) - 1;
+        state->d = (answer >> 8) & 0xff;
+        state->e = answer & 0xff;
+    } break;
     case 0x1c: // INR E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = state->e + 1;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.p = Parity(answer & 0xff);
-            state->e = answer;
-        }
-        break;
+    {
+        uint16_t answer = state->e + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->e, 1);
+        state->e = answer;
+    } break;
     case 0x1d: // DCR E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
-    case 0x1e: // MVI E,#$%02x
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+    {
+        uint8_t answer = state->e - 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->e, ~1);
+        state->e = answer;
+    } break;
+    case 0x1e: // MVI E,data
+        state->e = opcode[1];
+        state->pc += 1;
         break;
     case 0x1f: // RAR
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t a = state->a;
+        state->a = (a >> 1) | (state->cc.cy << 7);
+        state->cc.cy = ((a & 1) == 1);
+    } break;
     case 0x20: // NOP
         UnimplementedInstruction(state);
         break;
@@ -1123,14 +1123,12 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 2;
         break;
     case 0x22: // SHLD data 16
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t addr = opcode_data(opcode);
-            state->memory[addr] = state->l;
-            state->memory[addr + 1] = state->h;
-        }
-        break;
+    {
+        uint16_t addr = opcode_data(opcode);
+        state->memory[addr] = state->l;
+        state->memory[addr + 1] = state->h;
+        state->pc += 2;
+    } break;
     case 0x23: // INX H
         // NOTE: Do nothing on overflow
         {
@@ -1144,28 +1142,28 @@ void Emulate8080Op(State8080 *state) {
         }
         break;
     case 0x24: // INR H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = state->h + 1;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.p = Parity(answer & 0xff);
-            state->h = answer;
-        }
-        break;
+    {
+        uint16_t answer = state->h + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->h, 1);
+        state->h = answer;
+    } break;
     case 0x25: // DCR H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->h - 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->h, ~1);
+        state->h = answer;
+    } break;
     case 0x26: // MVI H, data
         state->h = opcode[1];
         state->pc += 1;
         break;
     case 0x27: // DAA
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x28: // NOP
@@ -1180,40 +1178,42 @@ void Emulate8080Op(State8080 *state) {
         state->l = answer & 0xff;
     } break;
     case 0x2a: // LHLD data 16
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t addr = opcode_data(opcode);
+        state->l = state->memory[addr];
+        state->h = state->memory[addr + 1];
+        state->pc += 2;
+    } break;
     case 0x2b: // DCX H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint32_t answer = ((state->h << 8) | state->l) - 1;
+        state->h = (answer >> 8) & 0xff;
+        state->l = answer & 0xff;
+    } break;
     case 0x2c: // INR L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = state->l + 1;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.p = Parity(answer & 0xff);
-            state->l = answer;
-        }
-        break;
+    {
+        uint16_t answer = state->l + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->l, 1);
+        state->l = answer;
+    } break;
     case 0x2d: // DCR L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->l - 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->l, ~1);
+        state->l = answer;
+    } break;
     case 0x2e: // MVI L,data
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        state->l = opcode[1];
+        state->pc += 1;
         break;
     case 0x2f: // CMA
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        state->a = ~state->a;
         break;
     case 0x30: // NOP
         UnimplementedInstruction(state);
@@ -1231,32 +1231,28 @@ void Emulate8080Op(State8080 *state) {
         }
         break;
     case 0x33: // INX SP
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->sp += 1;
         break;
     case 0x34: // INR M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t addr = (state->h << 8) | state->l;
-            uint16_t answer = state->memory[addr] + 1;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.p = Parity(answer & 0xff);
-            state->memory[addr] = answer;
-        }
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        uint16_t answer = state->memory[addr] + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->memory[addr], 1);
+        state->memory[addr] = answer;
+    } break;
     case 0x35: // DCR M
-        // NOTE: Post interrupts
-        {
-            uint16_t addr = (state->h << 8) | state->l;
-            uint8_t answer = state->memory[addr] - 1;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.p = Parity(answer & 0xff);
-        }
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        uint8_t answer = state->memory[addr] - 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->memory[addr], 0xfe);
+        state->memory[addr] -= 1;
+    } break;
     case 0x36: // MVI M, data
     {
         uint16_t addr = (state->h << 8) | state->l;
@@ -1264,24 +1260,19 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 1;
     } break;
     case 0x37: // STC
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->cc.cy = 1;
         break;
     case 0x38: // NOP
         UnimplementedInstruction(state);
         break;
     case 0x39: // DAD SP
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint32_t answer = (state->h << 8) | state->l;
-            answer += state->sp;
-            state->cc.cy = (answer & 0xffff0000) != 0;
-            state->h = (answer & 0xff00) >> 8;
-            state->l = answer & 0xff;
-        }
-        break;
+    {
+        uint32_t answer = (state->h << 8) | state->l;
+        answer += state->sp;
+        state->cc.cy = (answer & 0xffff0000) != 0;
+        state->h = (answer & 0xff00) >> 8;
+        state->l = answer & 0xff;
+    } break;
     case 0x3a: // LDA data 16
     {
         uint16_t addr = (opcode[2] << 8) | opcode[1];
@@ -1289,135 +1280,100 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 2;
     } break;
     case 0x3b: // DCX SP
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        state->sp -= 1;
         break;
     case 0x3c: // INR A
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = state->a + 1;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.p = Parity(answer & 0xff);
-            state->a = answer;
-        }
-        break;
+    {
+        uint16_t answer = state->a + 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, 1);
+        state->a = answer;
+    } break;
     case 0x3d: // DCR A
-        UnimplementedInstruction(state);
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a - 1;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, 0xfe);
+        state->a = answer;
+    } break;
     case 0x3e: // MVI A, data
         state->a = opcode[1];
         state->pc += 1;
         break;
     case 0x3f: // CMC
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x40: // MOV B,B
-        UnimplementedInstruction(state);
         break;
     case 0x41: // MOV B,C
-        UnimplementedInstruction(state);
         state->b = state->c;
         break;
     case 0x42: // MOV B,D
-        UnimplementedInstruction(state);
         state->b = state->d;
         break;
     case 0x43: // MOV B,E
-        UnimplementedInstruction(state);
         state->b = state->e;
         break;
     case 0x44: // MOV B,H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->b = state->h;
         break;
     case 0x45: // MOV B,L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->b = state->l;
         break;
     case 0x46: // MOV B,M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        state->b = state->memory[addr];
+    } break;
         break;
     case 0x47: // MOV B,A
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->b = state->a;
         break;
     case 0x48: // MOV C,B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->c = state->b;
         break;
     case 0x49: // MOV C,C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         break;
     case 0x4a: // MOV C,D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->c = state->d;
         break;
     case 0x4b: // MOV C,E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->c = state->e;
         break;
     case 0x4c: // MOV C,H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->c = state->h;
         break;
     case 0x4d: // MOV C,L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->c = state->l;
         break;
     case 0x4e: // MOV C,M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        state->c = state->memory[addr];
+    } break;
         break;
     case 0x4f: // MOV C,A
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->c = state->a;
         break;
     case 0x50: // MOV D,B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->d = state->b;
         break;
     case 0x51: // MOV D,C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->d = state->c;
         break;
     case 0x52: // MOV D,D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         break;
     case 0x53: // MOV D,E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->d = state->e;
         break;
     case 0x54: // MOV D,H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->d = state->h;
         break;
     case 0x55: // MOV D,L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->d = state->l;
         break;
     case 0x56: // MOV D,M
@@ -1426,37 +1382,23 @@ void Emulate8080Op(State8080 *state) {
         state->d = state->memory[addr];
     } break;
     case 0x57: // MOV D,A
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->d = state->a;
         break;
     case 0x58: // MOV E,B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->e = state->b;
         break;
     case 0x59: // MOV E,C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->e = state->c;
         break;
     case 0x5a: // MOV E,D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->e = state->d;
         break;
     case 0x5b: // MOV E,E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         break;
     case 0x5c: // MOV E,H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->e = state->h;
         break;
     case 0x5d: // MOV E,L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->e = state->l;
         break;
     case 0x5e: // MOV E,M
@@ -1465,37 +1407,23 @@ void Emulate8080Op(State8080 *state) {
         state->e = state->memory[addr];
     } break;
     case 0x5f: // MOV E,A
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->e = state->a;
         break;
     case 0x60: // MOV H,B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->h = state->b;
         break;
     case 0x61: // MOV H,C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->h = state->c;
         break;
     case 0x62: // MOV H,D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->h = state->d;
         break;
     case 0x63: // MOV H,E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->h = state->e;
         break;
     case 0x64: // MOV H,H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         break;
     case 0x65: // MOV H,L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->h = state->l;
         break;
     case 0x66: // MOV H,M
@@ -1504,98 +1432,64 @@ void Emulate8080Op(State8080 *state) {
         state->h = state->memory[addr];
     } break;
     case 0x67: // MOV H,A
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->h = state->a;
         break;
     case 0x68: // MOV L,B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->l = state->b;
         break;
     case 0x69: // MOV L,C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->l = state->c;
         break;
     case 0x6a: // MOV L,D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->l = state->d;
         break;
     case 0x6b: // MOV L,E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->l = state->e;
         break;
     case 0x6c: // MOV L,H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->l = state->h;
         break;
     case 0x6d: // MOV L,L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         break;
     case 0x6e: // MOV L,M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        state->l = state->memory[addr];
+    } break;
     case 0x6f: // MOV L,A
         state->l = state->a;
         break;
     case 0x70: // MOV M,B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t addr = (state->h << 8) | state->l;
-            state->memory[addr] = state->b;
-        }
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        state->memory[addr] = state->b;
+    } break;
     case 0x71: // MOV M,C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t addr = (state->h << 8) | state->l;
-            state->memory[addr] = state->c;
-        }
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        state->memory[addr] = state->c;
+    } break;
     case 0x72: // MOV M,D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t addr = (state->h << 8) | state->l;
-            state->memory[addr] = state->d;
-        }
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        state->memory[addr] = state->d;
+    } break;
     case 0x73: // MOV M,E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t addr = (state->h << 8) | state->l;
-            state->memory[addr] = state->e;
-        }
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        state->memory[addr] = state->e;
+    } break;
     case 0x74: // MOV M,H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t addr = (state->h << 8) | state->l;
-            state->memory[addr] = state->h;
-        }
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        state->memory[addr] = state->h;
+    } break;
     case 0x75: // MOV M,L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t addr = (state->h << 8) | state->l;
-            state->memory[addr] = state->l;
-        }
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        state->memory[addr] = state->l;
+    } break;
     case 0x76: // MOV M,M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x77: // MOV M,A
@@ -1606,13 +1500,9 @@ void Emulate8080Op(State8080 *state) {
         }
         break;
     case 0x78: // MOV A,B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->a = state->b;
         break;
     case 0x79: // MOV A,C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->a = state->c;
         break;
     case 0x7a: // MOV A,D
@@ -1625,8 +1515,6 @@ void Emulate8080Op(State8080 *state) {
         state->a = state->h;
         break;
     case 0x7d: // MOV A,L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         state->a = state->l;
         break;
     case 0x7e: // MOV A,M
@@ -1635,259 +1523,231 @@ void Emulate8080Op(State8080 *state) {
         state->a = state->memory[addr];
     } break;
     case 0x7f: // MOV A,A
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         break;
     case 0x80: // ADD B
-        UnimplementedInstruction(state);
-        {
-            uint16_t answer = (uint16_t)state->a + (uint16_t)state->b;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.cy = (answer > 0xff);
-            state->cc.p = Parity(answer & 0xff);
-            state->a = answer & 0xff;
-        }
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->b;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->b);
+        state->a = answer & 0xff;
+    } break;
     case 0x81: // ADD C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = (uint16_t)state->a + (uint16_t)state->c;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.cy = (answer > 0xff);
-            state->cc.p = Parity(answer & 0xff);
-            state->a = answer & 0xff;
-        }
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->c;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->c);
+        state->a = answer & 0xff;
+    } break;
     case 0x82: // ADD D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = (uint16_t)state->a + (uint16_t)state->d;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.cy = (answer > 0xff);
-            state->cc.p = Parity(answer & 0xff);
-            state->a = answer & 0xff;
-        }
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->d;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->d);
+        state->a = answer & 0xff;
+    } break;
     case 0x83: // ADD E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = (uint16_t)state->a + (uint16_t)state->e;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.cy = (answer > 0xff);
-            state->cc.p = Parity(answer & 0xff);
-            state->a = answer & 0xff;
-        }
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->e;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->e);
+        state->a = answer & 0xff;
+    } break;
     case 0x84: // ADD H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = (uint16_t)state->a + (uint16_t)state->h;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.cy = (answer > 0xff);
-            state->cc.p = Parity(answer & 0xff);
-            state->a = answer & 0xff;
-        }
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->h;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->h);
+        state->a = answer & 0xff;
+    } break;
     case 0x85: // ADD L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = (uint16_t)state->a + (uint16_t)state->l;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.cy = (answer > 0xff);
-            state->cc.p = Parity(answer & 0xff);
-            state->a = answer & 0xff;
-        }
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->l;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->l);
+        state->a = answer & 0xff;
+    } break;
     case 0x86: // ADD M
-        UnimplementedInstruction(state);
-        {
-            uint16_t offset = (state->h << 8) | (state->l);
-            uint16_t answer = (uint16_t)state->a + state->memory[offset];
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.cy = (answer > 0xff);
-            state->cc.p = Parity(answer & 0xff);
-            state->a = answer & 0xff;
-        }
-        break;
+    {
+        uint16_t offset = (state->h << 8) | (state->l);
+        uint16_t answer = (uint16_t)state->a + state->memory[offset];
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->memory[offset]);
+        state->a = answer & 0xff;
+    } break;
     case 0x87: // ADD A
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint16_t answer = (uint16_t)state->a + (uint16_t)state->a;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.cy = (answer > 0xff);
-            state->cc.p = Parity(answer & 0xff);
-            state->a = answer & 0xff;
-        }
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->a;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->a);
+        state->a = answer & 0xff;
+    } break;
     case 0x88: // ADC B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x89: // ADC C
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x8a: // ADC D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x8b: // ADC E
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x8c: // ADC H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x8d: // ADC L
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x8e: // ADC M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x8f: // ADC A
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x90: // SUB B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x91: // SUB C
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x92: // SUB D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x93: // SUB E
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x94: // SUB H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x95: // SUB L
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x96: // SUB M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x97: // SUB A
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x98: // SBB B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x99: // SBB C
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x9a: // SBB D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x9b: // SBB E
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x9c: // SBB H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x9d: // SBB L
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0x9e: // SBB M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0x9f: // SBB A
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0xa0: // ANA B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a & state->b;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = ((state->a | state->b) & 0x08) != 0;
+        state->a = answer;
+    } break;
     case 0xa1: // ANA C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a & state->c;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = ((state->a | state->c) & 0x08) != 0;
+        state->a = answer;
+    } break;
     case 0xa2: // ANA D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a & state->d;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = ((state->a | state->d) & 0x08) != 0;
+        state->a = answer;
+    } break;
     case 0xa3: // ANA E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a & state->e;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = ((state->a | state->e) & 0x08) != 0;
+        state->a = answer;
+    } break;
     case 0xa4: // ANA H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a & state->h;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = ((state->a | state->h) & 0x08) != 0;
+        state->a = answer;
+    } break;
     case 0xa5: // ANA L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a & state->l;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = ((state->a | state->l) & 0x08) != 0;
+        state->a = answer;
+    } break;
     case 0xa6: // ANA M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        uint8_t answer = state->a & state->memory[addr];
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = ((state->a | state->memory[addr]) & 0x08) != 0;
+        state->a = answer;
+    } break;
     case 0xa7: // ANA A
     {
         uint8_t answer = state->a & state->a;
@@ -1895,50 +1755,81 @@ void Emulate8080Op(State8080 *state) {
         state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = 0;
         state->cc.p = Parity(answer & 0xff);
+        // TODO: understand this AuxiliaryCarry operation
+        state->cc.ac = ((state->a | state->a) & 0x08) != 0;
         state->a = answer;
     } break;
     case 0xa8: // XRA B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a ^ state->b;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+    } break;
     case 0xa9: // XRA C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a ^ state->c;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+    } break;
     case 0xaa: // XRA D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a ^ state->d;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+    } break;
     case 0xab: // XRA E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint8_t answer = state->a ^ state->e;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.cy = 0;
-            state->cc.p = Parity(answer & 0xff);
-            state->a = answer;
-        }
-        break;
+    {
+        uint8_t answer = state->a ^ state->e;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+    } break;
     case 0xac: // XRA H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a ^ state->h;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+    } break;
     case 0xad: // XRA L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a ^ state->l;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+    } break;
     case 0xae: // XRA M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        uint8_t answer = state->a ^ state->memory[addr];
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+    } break;
     case 0xaf: // XRA A
     {
         uint8_t answer = state->a ^ state->a;
@@ -1946,100 +1837,177 @@ void Emulate8080Op(State8080 *state) {
         state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = 0;
         state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
         state->a = answer;
     } break;
     case 0xb0: // ORA B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a | state->b;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+
+    } break;
     case 0xb1: // ORA C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a | state->c;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+
+    } break;
     case 0xb2: // ORA D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a | state->d;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+
+    } break;
     case 0xb3: // ORA E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a | state->e;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+
+    } break;
     case 0xb4: // ORA H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a | state->h;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+
+    } break;
     case 0xb5: // ORA L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a | state->l;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+
+    } break;
     case 0xb6: // ORA M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        uint8_t answer = state->a | state->memory[addr];
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+
+    } break;
     case 0xb7: // ORA A
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint8_t answer = state->a | state->a;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+
+    } break;
     case 0xb8: // CMP B
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a - state->b;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->b);
+    } break;
     case 0xb9: // CMP C
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a - state->e;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->c);
+    } break;
     case 0xba: // CMP D
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a - state->d;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->d);
+    } break;
     case 0xbb: // CMP E
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        /* UnimplementedInstruction(state); */
-        {
-            uint16_t answer = state->a - state->e;
-            state->cc.z = ((answer & 0xff) == 0);
-            state->cc.s = ((answer & 0x80) == 0x80);
-            state->cc.cy = (answer > 0xff);
-            state->cc.p = Parity(answer & 0xff);
-            state->pc += 1;
-        }
-        break;
+    {
+        uint16_t answer = state->a - state->e;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->e);
+    } break;
     case 0xbc: // CMP H
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a - state->h;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->h);
+    } break;
     case 0xbd: // CMP L
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a - state->l;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->l);
+    } break;
     case 0xbe: // CMP M
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        uint16_t answer = state->a - state->memory[addr];
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->memory[addr]);
+    } break;
     case 0xbf: // CMP A
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+               // NOTE: could be simplified
+    {
+        uint16_t answer = state->a - state->a;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->a);
+    } break;
     case 0xc0: // RNZ
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        if (state->cc.z == 0) {
+            state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
+            state->sp += 2;
+        }
         break;
     case 0xc1: // POP B
         state->c = state->memory[state->sp];
@@ -2059,8 +2027,6 @@ void Emulate8080Op(State8080 *state) {
         state->pc = opcode_data(opcode);
     } break;
     case 0xc4: // CNZ addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.z == 0) {
             uint16_t next = state->pc + 2;
             state->memory[state->sp - 1] = ((next >> 8) & 0xff);
@@ -2083,16 +2049,14 @@ void Emulate8080Op(State8080 *state) {
         state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, opcode[1]);
         state->a = answer & 0xff;
         state->pc += 1;
     } break;
     case 0xc7: // RST 0
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0xc8: // RZ
-        // NOTE: Post interrupt
         if (state->cc.z == 1) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
             state->sp += 2;
@@ -2106,7 +2070,6 @@ void Emulate8080Op(State8080 *state) {
         state->sp += 2;
     } break;
     case 0xca: // JZ addr
-        // NOTE: Post interrupt
         if (state->cc.z == 1) {
             state->pc = opcode_data(opcode);
         } else {
@@ -2117,8 +2080,6 @@ void Emulate8080Op(State8080 *state) {
         UnimplementedInstruction(state);
         break;
     case 0xcc: // CZ addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.z == 1) {
             uint16_t next = state->pc + 2;
             state->memory[state->sp - 1] = ((next >> 8) & 0xff);
@@ -2137,25 +2098,18 @@ void Emulate8080Op(State8080 *state) {
         state->sp -= 2;
         state->pc = opcode_data(opcode);
     } break;
-    case 0xce: // ACI #$%02x
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
+    case 0xce: // ACI data
         UnimplementedInstruction(state);
         break;
     case 0xcf: // RST 1
-               // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        {
+    {
 
-            state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
-            state->memory[state->sp - 2] = state->pc & 0xff;
-            state->sp -= 2;
-            state->pc = 0x08;
-        }
-        break;
+        state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+        state->memory[state->sp - 2] = state->pc & 0xff;
+        state->sp -= 2;
+        state->pc = 0x08;
+    } break;
     case 0xd0: // RNC
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.cy == 0) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
             state->sp += 2;
@@ -2167,7 +2121,6 @@ void Emulate8080Op(State8080 *state) {
         state->sp += 2;
         break;
     case 0xd2: // JNC addr
-        // NOTE: Post interrupts
         if (state->cc.cy == 0) {
             state->pc = opcode_data(opcode);
         } else {
@@ -2181,8 +2134,6 @@ void Emulate8080Op(State8080 *state) {
         exit(1);
         break;
     case 0xd4: // CNC addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.cy == 0) {
             uint16_t next = state->pc + 2;
             state->memory[state->sp - 1] = ((next >> 8) & 0xff);
@@ -2198,25 +2149,26 @@ void Emulate8080Op(State8080 *state) {
         state->memory[state->sp - 2] = state->e;
         state->sp -= 2;
         break;
-    case 0xd6: // SUI #$%02x
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    case 0xd6: // SUI data
+    {
+        uint16_t answer = state->a - opcode[1];
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.cy = (answer > 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~opcode[1]);
+        state->a = answer & 0xff;
+        state->pc += 1;
+    } break;
     case 0xd7: // RST 2
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        {
-            state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
-            state->memory[state->sp - 2] = state->pc & 0xff;
-            state->sp -= 2;
+    {
+        state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+        state->memory[state->sp - 2] = state->pc & 0xff;
+        state->sp -= 2;
 
-            state->pc = 0x10;
-        }
-        break;
+        state->pc = 0x10;
+    } break;
     case 0xd8: // RC
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.cy == 1) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
             state->sp += 2;
@@ -2226,7 +2178,6 @@ void Emulate8080Op(State8080 *state) {
         UnimplementedInstruction(state);
         break;
     case 0xda: // JC addr
-        // NOTE: Post interrupts
         if (state->cc.cy == 1) {
             state->pc = opcode_data(opcode);
         } else {
@@ -2234,14 +2185,10 @@ void Emulate8080Op(State8080 *state) {
         }
         break;
     case 0xdb: // IN port
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         printf("shouldn't call OUT from emulator\n");
         exit(1);
         break;
     case 0xdc: // CC addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.cy == 1) {
             uint16_t next = state->pc + 2;
             state->memory[state->sp - 1] = ((next >> 8) & 0xff);
@@ -2255,19 +2202,21 @@ void Emulate8080Op(State8080 *state) {
     case 0xdd: // NOP
         UnimplementedInstruction(state);
         break;
-    case 0xde: // SBI #$%02x
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    case 0xde: // SBI data
+    {
+        uint16_t answer = state->a - opcode[1] - state->cc.cy;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.cy = (answer > 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~(opcode[1] + state->cc.cy));
+        state->a = answer & 0xff;
+        state->pc += 1;
+    } break;
     case 0xdf: // RST 3
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0xe0: // RPO
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.p == 0) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
             state->sp += 2;
@@ -2279,8 +2228,6 @@ void Emulate8080Op(State8080 *state) {
         state->sp += 2;
         break;
     case 0xe2: // JPO addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.p == 0) {
             state->pc = opcode_data(opcode);
         } else {
@@ -2288,20 +2235,15 @@ void Emulate8080Op(State8080 *state) {
         }
         break;
     case 0xe3: // XTHL
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        {
-            uint8_t stack_top = state->memory[state->sp];
-            state->memory[state->sp] = state->l;
-            state->l = stack_top;
-            stack_top = state->memory[state->sp + 1];
-            state->memory[state->sp + 1] = state->h;
-            state->h = stack_top;
-        }
-        break;
+    {
+        uint8_t stack_top = state->memory[state->sp];
+        state->memory[state->sp] = state->l;
+        state->l = stack_top;
+        stack_top = state->memory[state->sp + 1];
+        state->memory[state->sp + 1] = state->h;
+        state->h = stack_top;
+    } break;
     case 0xe4: // CPO addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.p == 0) {
             uint16_t next = state->pc + 2;
             state->memory[state->sp - 1] = ((next >> 8) & 0xff);
@@ -2324,30 +2266,24 @@ void Emulate8080Op(State8080 *state) {
         state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = 0;
         state->cc.p = Parity(answer & 0xff);
+        // TODO: understand this AuxiliaryCarry operation
+        state->cc.ac = ((state->a | opcode[1]) & 0x08) != 0;
         state->a = answer;
         state->pc += 1;
     } break;
     case 0xe7: // RST 4
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0xe8: // RPE
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.p == 1) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
             state->sp += 2;
         }
         break;
     case 0xe9: // PCHL
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        state->pc = (state->h << 8) | state->l;
         break;
     case 0xea: // JPE addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.p == 0) {
             state->pc = opcode_data(opcode);
         } else {
@@ -2365,8 +2301,6 @@ void Emulate8080Op(State8080 *state) {
         state->e = temp_l;
     } break;
     case 0xec: // CPE addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.p == 1) {
             uint16_t next = state->pc + 2;
             state->memory[state->sp - 1] = ((next >> 8) & 0xff);
@@ -2380,19 +2314,13 @@ void Emulate8080Op(State8080 *state) {
     case 0xed: // NOP
         UnimplementedInstruction(state);
         break;
-    case 0xee: // XRI #$%02x
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
+    case 0xee: // XRI data
         UnimplementedInstruction(state);
         break;
     case 0xef: // RST 5
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0xf0: // RP
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.s == 0) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
             state->sp += 2;
@@ -2413,8 +2341,6 @@ void Emulate8080Op(State8080 *state) {
         }
         break;
     case 0xf2: // JP addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.s == 0) {
             state->pc = opcode_data(opcode);
         } else {
@@ -2423,12 +2349,8 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xf3: // DI
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0xf4: // CP addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.s == 0) {
             uint16_t next = state->pc + 2;
             state->memory[state->sp - 1] = ((next >> 8) & 0xff);
@@ -2445,25 +2367,34 @@ void Emulate8080Op(State8080 *state) {
         /* uint8_t psw = (state->cc.z | state->cc.s << 1 | state->cc.p << 2 | state->cc.cy << 3 | state->cc.ac << 4); */
         {
             state->memory[state->sp - 1] = state->a;
-            uint8_t psw = (state->cc.cy | 1 << 1 | state->cc.p << 2 | state->cc.ac << 4 | state->cc.z << 6 | state->cc.s << 7);
-            /* uint8_t psw = (state->cc.z | state->cc.s << 1 | state->cc.p << 2 | state->cc.cy << 3 | state->cc.ac << 4); */
+            /* uint8_t psw = (state->cc.cy | 1 << 1 | state->cc.p << 2 | state->cc.ac << 4 | state->cc.z << 6 | state->cc.s << 7); */
+            uint8_t psw = 0;
+            psw |= state->cc.s << 7;
+            psw |= state->cc.z << 6;
+            psw |= state->cc.ac << 4;
+            psw |= state->cc.p << 2;
+            psw |= 1 << 1;
+            psw |= state->cc.cy << 0;
             state->memory[state->sp - 2] = psw;
             state->sp -= 2;
         }
         break;
-    case 0xf6: // ORI #$%02x
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
-        break;
+    case 0xf6: // ORI data
+    {
+        uint8_t answer = state->a | opcode[1];
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) != 0);
+        state->cc.cy = 0;
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = 0;
+        state->a = answer;
+        state->pc += 1;
+
+    } break;
     case 0xf7: // RST 6
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         break;
     case 0xf8: // RM
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.s == 1) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
             state->sp += 2;
@@ -2471,12 +2402,8 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xf9: // SPHL
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
         break;
     case 0xfa: // JM addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.s == 1) {
             state->pc = opcode_data(opcode);
         } else {
@@ -2488,8 +2415,6 @@ void Emulate8080Op(State8080 *state) {
         state->int_delay = 1;
         break;
     case 0xfc: // CM addr
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         if (state->cc.s == 1) {
             uint16_t next = state->pc + 2;
             state->memory[state->sp - 1] = ((next >> 8) & 0xff);
@@ -2510,11 +2435,10 @@ void Emulate8080Op(State8080 *state) {
         state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (state->a < opcode[1]);
         state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~opcode[1]);
         state->pc += 1;
     } break;
     case 0xff: // DI
-        UnimplementedInstruction(state);
-        // NOTE: Post interrupts
         UnimplementedInstruction(state);
         state->int_enable = 0;
         break;
