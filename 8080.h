@@ -1,0 +1,52 @@
+#ifndef H_8080
+#define H_8080
+
+#include <stdint.h>
+
+#define IN (0xdb)  // opcode of IN
+#define OUT (0xd3) // opcode of OUT
+
+typedef struct ConditionCodes {
+    uint8_t z : 1;
+    uint8_t s : 1;
+    uint8_t p : 1;
+    uint8_t cy : 1;
+    uint8_t ac : 1;
+    uint8_t pad : 3;
+} ConditionCodes;
+
+typedef struct State8080 {
+    uint8_t a;
+    uint8_t b;
+    uint8_t c;
+    uint8_t d;
+    uint8_t e;
+    uint8_t h;
+    uint8_t l;
+    uint16_t sp;
+    uint16_t pc;
+    uint8_t *memory;
+    struct ConditionCodes cc;
+    uint8_t int_enable;
+    uint8_t which_interrupt;
+    uint32_t iteration_number;
+    uint8_t test_finished;
+} State8080;
+
+typedef struct SpaceInvadersMachine {
+    struct State8080 *state;
+    uint8_t shift_high;
+    uint8_t shift_low;
+    uint8_t shift_offset;
+} SpaceInvadersMachine;
+
+SpaceInvadersMachine *init_machine(void);
+State8080 *init_state_8080(void);
+void print_state(State8080 *state);
+int Disassemble8080Op(unsigned char *codebuffer, int pc);
+void EmulateMachineIn(SpaceInvadersMachine *machine, uint8_t port);
+void EmulateMachineOut(SpaceInvadersMachine *machine, uint8_t port);
+void Emulate8080Op(State8080 *state);
+void read_rom_into_memory(State8080 *state, char *filename, uint16_t offset);
+
+#endif
