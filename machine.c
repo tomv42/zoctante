@@ -16,12 +16,15 @@ void EmulateMachineIn(SpaceInvadersMachine *machine, uint8_t port) {
     state->pc += 2; // opcode + port
     switch (port) {
     case 0:
-        state->a = 1; // play in attract mode
-                      // TODO: find where this value comes from
         break;
     case 1:
-        state->a = 0; // play in attract mode
+        // TODO: implement real ports (input)
+        state->a = 0;
+        state->a |= 1 << 0; // coin
+        state->a |= 1 << 1; // P2 start button
         break;
+    case 2:
+        state->a = 0;
     case 3: {
         uint16_t v = (machine->shift_high << 8) | machine->shift_low;
         state->a = ((v >> (8 - machine->shift_offset)) & 0xff);
@@ -53,7 +56,7 @@ void EmulateMachineOut(SpaceInvadersMachine *machine, uint8_t port) {
         }
     } break;
     case 2:
-        machine->shift_offset = state->a;
+        machine->shift_offset = state->a & 7;
         break;
     case 4:
         machine->shift_low = machine->shift_high;

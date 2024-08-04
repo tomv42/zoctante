@@ -19,9 +19,11 @@ State8080 *init_state_8080(void) {
 }
 
 void print_state(State8080 *state) {
-    printf("\tCY=%d, P=%d, S=%d, Z=%d, I=%d\n", state->cc.cy, state->cc.p, state->cc.s, state->cc.z, state->int_enable);
-    printf("\tA=%02x, BC=%02x%02x, DE=%02x%02x, HL=%02x%02x ", state->a, state->b, state->c, state->d, state->e, state->h, state->l);
-    printf("PC=%04x, SP=%04x\n", state->pc, state->sp);
+    /* printf("\tCY=%d, P=%d, S=%d, Z=%d, I=%d\n", state->cc.cy, state->cc.p, state->cc.s, state->cc.z, state->int_enable); */
+    /* printf("\tA=%02x, BC=%02x%02x, DE=%02x%02x, HL=%02x%02x ", state->a, state->b, state->c, state->d, state->e, state->h, state->l); */
+    /* printf("PC=%04x, SP=%04x\n", state->pc, state->sp); */
+    printf("PC: %04X, AF: %02X.., BC: %02X%02X, DE: %02X%02X, HL: %02X%02X, SP: %04X", state->pc, state->a, state->b, state->c, state->d, state->e,
+           state->h, state->l, state->sp);
 }
 
 /*
@@ -899,6 +901,12 @@ void Emulate8080Op(State8080 *state) {
     state->iteration_number += 1;
     state->pc += 1; // for the opcode
 
+    // when DI is executed, interrupts won't be serviced until the end of next instruction:
+    // or is it after EI is executed?
+    if (state->int_delay > 0) {
+        state->int_delay -= 1;
+    }
+
     switch (*opcode) {
     case 0x00: // NOP
         break;
@@ -1240,7 +1248,6 @@ void Emulate8080Op(State8080 *state) {
         }
         break;
     case 0x35: // DCR M
-        UnimplementedInstruction(state);
         // NOTE: Post interrupts
         {
             uint16_t addr = (state->h << 8) | state->l;
@@ -2085,7 +2092,6 @@ void Emulate8080Op(State8080 *state) {
         UnimplementedInstruction(state);
         break;
     case 0xc8: // RZ
-        UnimplementedInstruction(state);
         // NOTE: Post interrupt
         if (state->cc.z == 1) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
@@ -2100,7 +2106,6 @@ void Emulate8080Op(State8080 *state) {
         state->sp += 2;
     } break;
     case 0xca: // JZ addr
-        UnimplementedInstruction(state);
         // NOTE: Post interrupt
         if (state->cc.z == 1) {
             state->pc = opcode_data(opcode);
@@ -2125,26 +2130,6 @@ void Emulate8080Op(State8080 *state) {
         }
         break;
     case 0xcd: // CALL addr
-#if 0
-               // TODO: Understand this fix
-        if (5 == ((opcode[2] << 8) | opcode[1])) {
-            if (state->c == 9) {
-                uint16_t offset = (state->d << 8) | (state->e);
-                char *str = (char *)&state->memory[offset + 3]; // skip the prefix bytes
-                printf("\nTEST OUTPUT: ");
-                while (*str != '$')
-                    printf("%c", *str++);
-                printf("\n");
-                print_state(state);
-            } else if (state->c == 2) {
-                /* // saw this in the inspected code, never saw it called */
-                /* printf("print char routine called\n"); */
-                printf("%c", state->e);
-            }
-        } else if (0 == ((opcode[2] << 8) | opcode[1])) {
-            exit(0);
-        } else
-#endif
     {
         uint16_t next = state->pc + 2;
         state->memory[state->sp - 1] = ((next >> 8) & 0xff);
@@ -2158,9 +2143,15 @@ void Emulate8080Op(State8080 *state) {
         UnimplementedInstruction(state);
         break;
     case 0xcf: // RST 1
+               // NOTE: Post interrupts
         UnimplementedInstruction(state);
-        // NOTE: Post interrupts
-        UnimplementedInstruction(state);
+        {
+
+            state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+            state->memory[state->sp - 2] = state->pc & 0xff;
+            state->sp -= 2;
+            state->pc = 0x08;
+        }
         break;
     case 0xd0: // RNC
         UnimplementedInstruction(state);
@@ -2176,7 +2167,6 @@ void Emulate8080Op(State8080 *state) {
         state->sp += 2;
         break;
     case 0xd2: // JNC addr
-        UnimplementedInstruction(state);
         // NOTE: Post interrupts
         if (state->cc.cy == 0) {
             state->pc = opcode_data(opcode);
@@ -2214,9 +2204,15 @@ void Emulate8080Op(State8080 *state) {
         UnimplementedInstruction(state);
         break;
     case 0xd7: // RST 2
-        UnimplementedInstruction(state);
         // NOTE: Post interrupts
         UnimplementedInstruction(state);
+        {
+            state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+            state->memory[state->sp - 2] = state->pc & 0xff;
+            state->sp -= 2;
+
+            state->pc = 0x10;
+        }
         break;
     case 0xd8: // RC
         UnimplementedInstruction(state);
@@ -2230,7 +2226,6 @@ void Emulate8080Op(State8080 *state) {
         UnimplementedInstruction(state);
         break;
     case 0xda: // JC addr
-        UnimplementedInstruction(state);
         // NOTE: Post interrupts
         if (state->cc.cy == 1) {
             state->pc = opcode_data(opcode);
@@ -2490,6 +2485,7 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xfb: // EI
         state->int_enable = 1;
+        state->int_delay = 1;
         break;
     case 0xfc: // CM addr
         UnimplementedInstruction(state);
@@ -2520,6 +2516,7 @@ void Emulate8080Op(State8080 *state) {
         UnimplementedInstruction(state);
         // NOTE: Post interrupts
         UnimplementedInstruction(state);
+        state->int_enable = 0;
         break;
     }
 }

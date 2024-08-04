@@ -74,12 +74,14 @@ bool compare_states(i8080 *c, State8080 *state) {
     return 1;
 }
 
-void compare_memories(uint8_t *i8080_memory, uint8_t *state8080_memory) {
+// returns the number of places where memory differs
+int compare_memories(uint8_t *i8080_memory, uint8_t *state8080_memory) {
     int nb_diffs = 0;
     for (int i = 0; i < 1 << 16; i++) {
         nb_diffs += (i8080_memory[i] != state8080_memory[i]);
     }
-    printf("Memory differs in %d places.\n", nb_diffs);
+    /* printf("Memory differs in %d places.\n", nb_diffs); */
+    return nb_diffs;
 };
 
 i8080 *init_benchmark_emulator(char *filename, uint16_t offset) {
@@ -105,4 +107,11 @@ i8080 *init_benchmark_emulator(char *filename, uint16_t offset) {
 
 uint8_t *get_benchmark_memory(void) {
     return memory;
+}
+
+void print_state_comparison(State8080 *state, i8080 *c) {
+    printf("\n--------- MY STATE -----------\n");
+    print_state(state);
+    printf("\n------ BENCHMARK STATE -------\n");
+    i8080_debug_output(c, 1);
 }

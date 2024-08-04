@@ -28,6 +28,9 @@ typedef struct State8080 {
     uint8_t *memory;
     struct ConditionCodes cc;
     uint8_t int_enable;
+    uint8_t int_pending;
+    uint8_t int_number;
+    uint8_t int_delay;
     uint8_t which_interrupt;
     uint32_t iteration_number;
     uint8_t test_finished;

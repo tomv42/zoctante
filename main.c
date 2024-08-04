@@ -33,33 +33,39 @@ static const uint8_t cycles_lookup[256] = {
 };
 
 static void GenerateInterrupt(State8080 *state, int interrupt_number) {
-    if (state->int_enable) {
-
-        state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
-        state->memory[state->sp - 2] = state->pc & 0xff;
-        state->sp -= 2;
-
-        /* state->pc = 8 * interrupt_number; */
-        switch (interrupt_number) {
-        case 1:
-            state->pc = 0x08;
-            break;
-        case 2:
-            state->pc = 0x10;
-            break;
-        }
-
-        //"DI"
-        state->int_enable = 0;
-    }
+    state->int_pending = 1;
+    state->int_number = interrupt_number;
 }
 
-static void copy_screen_buffer_grayscale(uint8_t *screen_buffer, uint8_t *memory) {
+static void execute_interrupt(State8080 *state, int interrupt_number) {
+    state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+    state->memory[state->sp - 2] = state->pc & 0xff;
+    state->sp -= 2;
+    state->pc = 8 * interrupt_number;
+}
+
+static void copy_screen_buffer_grayscale(uint8_t *screen_buffer, uint8_t *memory, int scale) {
+    int index;
+    int new_index;
+    int new_row;
+    int new_col;
     for (int i = 0; i < 256 * 224 / 8; i++) {
         uint8_t byte = memory[i];
-        for (int j = 0; j < 8; j++) {
-            uint8_t bit = (byte >> j) % 2;
-            screen_buffer[8 * i + j] = 0xff * bit;
+        for (int xs = 0; xs < scale; xs++) {
+            for (int ys = 0; ys < scale; ys++) {
+                for (int j = 0; j < 8; j++) {
+                    uint8_t bit = (byte >> j) % 2;
+
+                    index = 8 * i + j;
+                    new_row = 256 - index % 256;
+                    new_col = index / 256;
+                    new_index = new_row * 224 * scale * scale + new_col * scale;
+                    new_index += xs;
+                    new_index += scale * 224 * ys;
+
+                    screen_buffer[new_index] = 0xff * bit;
+                }
+            }
         }
     }
 }
@@ -84,6 +90,7 @@ int main() {
     int width = 224 * scale;
     int height = 256 * scale;
 
+    /* SetTraceLogLevel(LOG_WARNING); */
     InitWindow(width, height, "zoctante - space invaders");
     SetWindowMonitor(0);
     SetWindowPosition(10, 10);
@@ -91,21 +98,21 @@ int main() {
     // 2400-3FFF 7K video RAM
     /* uint8_t *screen_buffer = &state->memory[0x2400]; */
     /* uint8_t *screen_buffer = memory + 0x2400; */
-    uint8_t *screen_buffer = malloc(8 * 256 * 224);
-    copy_screen_buffer_grayscale(screen_buffer, &state->memory[0x2400]);
+    uint8_t *screen_buffer = malloc(scale * 8 * 256 * 224);
+    copy_screen_buffer_grayscale(screen_buffer, &state->memory[0x2400], scale);
     printf("Loaded screen buffer\n");
 
     // The raster resolution is 256x224 at 60Hz
     // The monitor is rotated in the cabinet 90 degrees counter-clockwise
     Image image = {
-        // .format = (int)PIXELFORMAT_UNCOMPRESSED_GRAYSCALE,
-        .format = (int)PIXELFORMAT_UNCOMPRESSED_GRAYSCALE, .mipmaps = 1, .width = 256, .height = 224, .data = screen_buffer,
+        .format = (int)PIXELFORMAT_UNCOMPRESSED_GRAYSCALE,
+        .mipmaps = 1,
+        .width = scale * 224,
+        .height = scale * 256,
+        .data = screen_buffer,
     };
-    /* ImageRotateCCW(&image); */
-    /* ImageResize(&image, 224 * scale, 256 * scale); */
-    printf("Loaded image\n");
 
-    Texture2D texture;
+    Texture2D texture = LoadTextureFromImage(image);
 
     double time = GetTime();
     double time_since_last_interrupt = time;
@@ -117,8 +124,8 @@ int main() {
     double last_cycle_time = time;
     int elapsed_cycles;
     int cycle_count;
+    uint16_t pc;
 
-    /* while (!WindowShouldClose() && iteration_number < 60000) { */
     while (!WindowShouldClose()) {
 
         // Make sure everything is measured at once
@@ -130,10 +137,24 @@ int main() {
         cycle_count = 0;
         while (cycle_count < elapsed_cycles) {
 
+#if 0
+            Disassemble8080Op(state->memory, pc);
+            printf("\n--------- MY STATE -----------\n");
+            print_state(state);
+            printf("\n------ BENCHMARK STATE -------\n");
+            i8080_debug_output(c, 1);
+#endif
+
+            pc = state->pc; // store pc for debugging purposes
             opcode = &state->memory[state->pc];
             cycle_count += cycles_lookup[opcode[0]];
 
-            if (*opcode == IN) {
+            if (state->int_pending && state->int_enable && state->int_delay == 0) {
+                state->int_pending = 0;
+                state->int_enable = 0;
+
+                execute_interrupt(state, state->int_number);
+            } else if (*opcode == IN) {
                 uint8_t port = opcode[1];
                 EmulateMachineIn(machine, port);
             } else if (*opcode == OUT) {
@@ -144,45 +165,57 @@ int main() {
             }
             i8080_step(c);
 
-            if (!compare_states(c, state)) {
-                printf("States are different.\n");
-                exit(0);
-            }
+            /* if (!compare_states(c, state)) { */
+            /*     printf("\nn = %ld\n", iteration_number); */
+            /*     printf("\nStates are different after instruction:\n"); */
+            /*     Disassemble8080Op(state->memory, pc); */
+            /*     print_state_comparison(state, c); */
+            /*     exit(1); */
+            /* } */
+
+            /* if (compare_memories(i8080_memory, state8080_memory) != 0) { */
+            /*     printf("\nMemories differ\n"); */
+            /*     exit(1); */
+            /* } */
 
             /* printf("iteration: %ld\n", iteration_number); */
             iteration_number++;
         }
 
+        last_cycle_time = GetTime();
+
         // Generate 2 screen interrupts per frame (60Hz so every 1/120s)
         if (time_since_last_interrupt > interrupt_delay) {
-            printf("Generating Interrupt\n");
+            /* printf("\nGenerating Interrupt\n"); */
 
             // If I understand this right then the system gets RST 8 when the beam is *near* the middle of the screen
             // and RST 10 when it is at the end (start of VBLANK).
+
             GenerateInterrupt(state, state->which_interrupt);
-
             i8080_interrupt(c, (state->which_interrupt == 2) ? 0xd7 : 0xcf);
-            i8080_step(c);
 
-            if (!compare_states(c, state)) {
-                printf("States after interrupt are different.\n");
-            }
+            /* if (!compare_states(c, state)) { */
+            /*     printf("\nStates after interrupt are different.\n"); */
+            /*     print_state_comparison(state, c); */
+            /*     printf("\nnext instruction:\n"); */
+            /*     Disassemble8080Op(state->memory, state->pc); */
+            /*     exit(1); */
+            /* } */
 
             // Draw on RST 10 interrupt
             if (state->which_interrupt == 1) {
-                printf("Drawing screen at iteration %ld\n", iteration_number);
+                /* printf("Drawing screen at iteration %ld\n", iteration_number); */
 
-                copy_screen_buffer_grayscale(screen_buffer, &state8080_memory[0x2400]);
-                image.data = screen_buffer;
+                copy_screen_buffer_grayscale(screen_buffer, &state8080_memory[0x2400], scale);
+                /* copy_screen_buffer_grayscale(screen_buffer, &i8080_memory[0x2400], scale); */
 
-                texture = LoadTextureFromImage(image);
+                UpdateTexture(texture, image.data);
 
                 BeginDrawing();
-                ClearBackground(RED);
-                DrawTexture(texture, (width - 210 * scale) / 2, (height - 256 * scale) / 2, WHITE);
+                ClearBackground(BLACK);
+                DrawTexture(texture, (width - 224 * scale) / 2, (height - 256 * scale) / 2, WHITE);
+                DrawFPS(50, 10);
                 EndDrawing();
-
-                UnloadTexture(texture);
 
                 interrupt_time = time; // use the same time as the other measures
             }
@@ -190,20 +223,6 @@ int main() {
             // alternate between 1 and 2 */
             state->which_interrupt = (state->which_interrupt == 1) ? 2 : 1;
         }
-
-        /* if (!compare_states(c, state)) { */
-        /*     printf("n = %ld\n", iteration_number); */
-        /*     printf("States are different\n"); */
-        /*     printf("--------- MY STATE -----------\n"); */
-        /*     print_state(state); */
-        /*     printf("------BENCHMARK STATE -------\n"); */
-        /*     i8080_debug_output(c, 1); */
-        /*     exit(1); */
-        /* } */
-
-        /* Disassemble8080Op(state->memory, state->pc); */
-        /* print_state(state); */
-        /* i8080_debug_output(c, 1); */
     }
 
     UnloadTexture(texture);
