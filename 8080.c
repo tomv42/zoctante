@@ -10,7 +10,7 @@ State8080 *init_state_8080(void) {
     memset(state, 0, sizeof(*state));
     uint8_t *memory = calloc(1 << 16, 1);
     if (memory == NULL) {
-        printf("Couldn't allocate memory for 8080 state.");
+        printf("Couldn't allocate memory for 8080 state.\n");
         exit(1);
     }
     state->memory = memory;
@@ -18,6 +18,11 @@ State8080 *init_state_8080(void) {
     state->sp = 0xf000;
 
     return state;
+}
+
+void free_state_8080(State8080 *state) {
+    free(state->memory);
+    free(state);
 }
 
 void print_state(State8080 *state) {
@@ -910,8 +915,8 @@ void Emulate8080Op(State8080 *state) {
     state->iteration_number += 1;
     state->pc += 1; // for the opcode
 
-    // when DI is executed, interrupts won't be serviced until the end of next instruction:
-    // or is it after EI is executed?
+    // When EI is executed, the interrupt system is enabled following the execution of the next instruction.
+    // See how EI is implemented
     if (state->int_delay > 0) {
         state->int_delay -= 1;
     }
@@ -1164,8 +1169,24 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 1;
         break;
     case 0x27: // DAA
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a;
+        uint16_t added = 0x00;
+        if (state->cc.ac || ((answer & 0x0f) > 9)) {
+            answer += 0x06;
+            added += 0x06;
+        }
+        if (state->cc.cy || ((answer & 0xf0) > (9 << 4))) {
+            answer = answer + 0x60;
+            added += 0x60;
+        }
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.cy = (answer > 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, added);
+        state->a = answer & 0xff;
+    } break;
     case 0x28: // NOP
         UnimplementedInstruction(state);
         break;
@@ -1606,53 +1627,168 @@ void Emulate8080Op(State8080 *state) {
         state->a = answer & 0xff;
     } break;
     case 0x88: // ADC B
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->b + state->cc.cy;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->b + state->cc.cy);
+        state->a = answer & 0xff;
+    } break;
     case 0x89: // ADC C
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->c + state->cc.cy;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->c + state->cc.cy);
+        state->a = answer & 0xff;
+    } break;
     case 0x8a: // ADC D
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->d + state->cc.cy;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->d + state->cc.cy);
+        state->a = answer & 0xff;
+    } break;
     case 0x8b: // ADC E
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->e + state->cc.cy;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->e + state->cc.cy);
+        state->a = answer & 0xff;
+    } break;
     case 0x8c: // ADC H
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->h + state->cc.cy;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->h + state->cc.cy);
+        state->a = answer & 0xff;
+    } break;
     case 0x8d: // ADC L
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->l + state->cc.cy;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->l + state->cc.cy);
+        state->a = answer & 0xff;
+    } break;
     case 0x8e: // ADC M
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        uint16_t answer = (uint16_t)state->a + state->memory[addr] + state->cc.cy;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->memory[addr] + state->cc.cy);
+        state->a = answer & 0xff;
+    } break;
     case 0x8f: // ADC A
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = (uint16_t)state->a + (uint16_t)state->a + state->cc.cy;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.cy = (answer > 0xff);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->a + state->cc.cy);
+        state->a = answer & 0xff;
+    } break;
     case 0x90: // SUB B
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a - state->b;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.cy = (answer > 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->b);
+        state->a = answer & 0xff;
+    } break;
     case 0x91: // SUB C
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a - state->c;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.cy = (answer > 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->c);
+        state->a = answer & 0xff;
+    } break;
     case 0x92: // SUB D
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a - state->d;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.cy = (answer > 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->d);
+        state->a = answer & 0xff;
+    } break;
     case 0x93: // SUB E
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a - state->e;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.cy = (answer > 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->e);
+        state->a = answer & 0xff;
+    } break;
     case 0x94: // SUB H
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a - state->h;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.cy = (answer > 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->h);
+        state->a = answer & 0xff;
+    } break;
     case 0x95: // SUB L
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t answer = state->a - state->l;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.cy = (answer > 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->l);
+        state->a = answer & 0xff;
+    } break;
     case 0x96: // SUB M
-        UnimplementedInstruction(state);
-        break;
+    {
+        uint16_t addr = (state->h << 8) | state->l;
+        uint16_t answer = state->a - state->memory[addr];
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.cy = (answer > 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->memory[addr]);
+        state->a = answer & 0xff;
+    } break;
     case 0x97: // SUB A
-        UnimplementedInstruction(state);
-        break;
+               // NOTE: could be simplified
+    {
+        uint16_t answer = state->a - state->a;
+        state->cc.z = ((answer & 0xff) == 0);
+        state->cc.s = ((answer & 0x80) == 0x80);
+        state->cc.p = Parity(answer & 0xff);
+        state->cc.cy = (answer > 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->a);
+        state->a = answer & 0xff;
+    } break;
     case 0x98: // SBB B
         UnimplementedInstruction(state);
         break;
@@ -2439,13 +2575,12 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 1;
     } break;
     case 0xff: // DI
-        UnimplementedInstruction(state);
         state->int_enable = 0;
         break;
     }
 }
 
-void read_rom_into_memory(State8080 *state, char *filename, uint16_t offset) {
+void read_rom_into_memory(uint8_t *memory, char *filename, uint16_t offset) {
     FILE *f = fopen(filename, "rb");
     if (f == NULL) {
         printf("error: Couldn't open %s\n", filename);
@@ -2457,7 +2592,7 @@ void read_rom_into_memory(State8080 *state, char *filename, uint16_t offset) {
     int fsize = ftell(f);
     (void)fseek(f, 0L, SEEK_SET);
 
-    uint8_t *buffer = &state->memory[offset];
+    uint8_t *buffer = &memory[offset];
 
     (void)fread(buffer, fsize, 1, f);
     fclose(f);

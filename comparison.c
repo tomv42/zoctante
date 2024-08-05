@@ -1,5 +1,6 @@
 #include "comparison.h"
 #include "i8080.h"
+#include "machine.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <strings.h>
@@ -7,6 +8,18 @@
 State8080 *benchmark_state;
 uint8_t *memory;
 bool test_finished = 0;
+
+static void init_benchmark_memory(void) {
+    memory = calloc(1 << 16, 1);
+    if (memory == NULL) {
+        printf("Couldn't allocate benchmark memory.\n");
+        exit(1);
+    }
+}
+
+static void free_benchmark_memory(void) {
+    free(memory);
+}
 
 static uint8_t rb(void *userdata, uint16_t addr) {
     return memory[addr];
@@ -21,14 +34,11 @@ static uint8_t port_in(void *userdata, uint8_t port) {
     uint8_t value = 0xff;
 
     switch (port) {
-    case 0:
-        break;
     case 1:
-        // WARN: to change when implementing input
-        value = 0;
+        value = c->ports.port1;
         break;
     case 2:
-        value = 0;
+        value = c->ports.port2;
         break;
     case 3: {
         uint16_t v = (c->shift_high << 8) | c->shift_low;
@@ -39,7 +49,6 @@ static uint8_t port_in(void *userdata, uint8_t port) {
         exit(1);
     }
 
-    c->a = value;
     return value;
 }
 
@@ -69,6 +78,12 @@ static void port_out(void *userdata, uint8_t port, uint8_t value) {
         c->shift_high = value;
         break;
     }
+}
+
+// ports passed as value
+void update_benchmark_ports(i8080 *c, Ports ports) {
+    c->ports.port1 = ports.port1;
+    c->ports.port2 = ports.port2;
 }
 
 bool compare_states(i8080 *c, State8080 *state) {
@@ -118,9 +133,8 @@ int memories_are_equal(uint8_t *i8080_memory, uint8_t *state8080_memory) {
 i8080 *init_benchmark_emulator(char *filename, uint16_t offset) {
     // HACK: The right way to do it would be to initialize the memory immediately
     // without using my emulator to do it in an indirect way
-    benchmark_state = init_state_8080();
-    read_rom_into_memory(benchmark_state, filename, offset);
-    memory = benchmark_state->memory;
+    init_benchmark_memory();
+    read_rom_into_memory(memory, filename, offset);
 
     i8080 *c = malloc(sizeof(*c));
     i8080_init(c); // need to supply the read and write functions
@@ -134,6 +148,11 @@ i8080 *init_benchmark_emulator(char *filename, uint16_t offset) {
     c->sp = 0xf000;
 
     return c;
+}
+
+void free_benchmark_emulator(i8080 *c) {
+    free_benchmark_memory();
+    free(c);
 }
 
 uint8_t *get_benchmark_memory(void) {

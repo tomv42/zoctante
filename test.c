@@ -8,7 +8,7 @@ int main(void) {
     SpaceInvadersMachine *machine = init_machine();
 
     State8080 *state = machine->state;
-    read_rom_into_memory(state, "cpudiag.bin", 0x100);
+    read_rom_into_memory(state->memory, "cpudiag.bin", 0x100);
 
     // TODO: Understand these fixes
     state->pc = 0x100;

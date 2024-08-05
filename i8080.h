@@ -1,6 +1,7 @@
 #ifndef I8080_I8080_H_
 #define I8080_I8080_H_
 
+#include "machine.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -28,6 +29,8 @@ typedef struct i8080 {
     bool interrupt_pending : 1;
     uint8_t interrupt_vector;
     uint8_t interrupt_delay;
+
+    Ports ports;
 } i8080;
 
 void i8080_init(i8080 *const c);

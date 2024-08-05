@@ -7,7 +7,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #define FRAME_RATE (60)
 #define CLOCK_SPEED (2000000)
@@ -83,34 +82,34 @@ static void copy_screen_buffer_grayscale(uint8_t *screen_buffer, uint8_t *memory
     }
 }
 
+#define COMPARE 0
 int main() {
 
     SpaceInvadersMachine *machine = init_machine();
     State8080 *state = machine->state;
-    read_rom_into_memory(state, "invaders.concatenated", 0x0000);
+    read_rom_into_memory(state->memory, "invaders.concatenated", 0x0000);
+    uint8_t *state8080_memory = state->memory;
 
+#if COMPARE
     i8080 *c = init_benchmark_emulator("invaders.concatenated", 0x0000);
+    uint8_t *i8080_memory = get_benchmark_memory();
+#endif
 
     unsigned char *opcode;
 
     long iteration_number = 0;
     long max_iter = 60000;
 
-    uint8_t *i8080_memory = get_benchmark_memory();
-    uint8_t *state8080_memory = state->memory;
-
     int scale = 4;
     int width = 224 * scale;
     int height = 256 * scale;
 
-    /* SetTraceLogLevel(LOG_WARNING); */
+    SetTraceLogLevel(LOG_WARNING);
     InitWindow(width, height, "zoctante - space invaders");
     SetWindowMonitor(1);
     SetWindowPosition(10, 10);
 
     // 2400-3FFF 7K video RAM
-    /* uint8_t *screen_buffer = &state->memory[0x2400]; */
-    /* uint8_t *screen_buffer = memory + 0x2400; */
     uint8_t *screen_buffer = malloc(scale * 8 * 256 * 224);
     copy_screen_buffer_grayscale(screen_buffer, &state->memory[0x2400], scale);
     printf("Loaded screen buffer\n");
@@ -126,10 +125,11 @@ int main() {
     };
 
     Texture2D texture = LoadTextureFromImage(image);
+    printf("Loaded Texture\n");
 
     double time = GetTime();
     double time_since_last_interrupt = time;
-    // HACK: I don't know why I get 120FPS even though the screen on only half of the interrupts
+    // FIX: I don't know why I get 120FPS even though the screen on only half of the interrupts
     double interrupt_delay = 1.0 / 120.0;           // delay between two interrupts
     double interrupt_time = time + interrupt_delay; // time of the last interrupt
     state->which_interrupt = 1;
@@ -141,6 +141,13 @@ int main() {
     uint16_t pc;
 
     while (!WindowShouldClose()) {
+
+        // Handle input
+        emulate_machines_input(machine);
+        // replicate the input on the benchmark machine
+#if COMPARE
+        update_benchmark_ports(c, machine->ports);
+#endif
 
         // Make sure everything is measured at once
         time = GetTime();
@@ -169,10 +176,9 @@ int main() {
             } else {
                 Emulate8080Op(state);
             }
-            i8080_step(c);
 
-#define COMPARE 1
 #if COMPARE
+            i8080_step(c);
             if (!compare_states(c, state)) {
                 printf("\nn = %ld\n", iteration_number);
                 printf("\nStates are different after instruction:\n");
@@ -199,26 +205,16 @@ int main() {
         if (time_since_last_interrupt > interrupt_delay) {
             /* printf("\nGenerating Interrupt\n"); */
 
-            // If I understand this right then the system gets RST 8 when the beam is *near* the middle of the screen
-            // and RST 10 when it is at the end (start of VBLANK).
-
+            // The system gets RST 1 when the beam is *near* the middle of the screen
+            // and RST 2 when it is at the end (start of VBLANK).
             GenerateInterrupt(state, state->which_interrupt);
+#if COMPARE
             i8080_interrupt(c, (state->which_interrupt == 2) ? 0xd7 : 0xcf);
+#endif
 
-            /* if (!compare_states(c, state)) { */
-            /*     printf("\nStates after interrupt are different.\n"); */
-            /*     print_state_comparison(state, c); */
-            /*     printf("\nnext instruction:\n"); */
-            /*     Disassemble8080Op(state->memory, state->pc); */
-            /*     exit(1); */
-            /* } */
-
-            // Draw on RST 10 interrupt
-            if (state->which_interrupt == 1) {
-                /* printf("Drawing screen at iteration %ld\n", iteration_number); */
-
+            // Draw on RST 2 interrupt
+            if (state->which_interrupt == 2) {
                 copy_screen_buffer_grayscale(screen_buffer, &state8080_memory[0x2400], scale);
-                /* copy_screen_buffer_grayscale(screen_buffer, &i8080_memory[0x2400], scale); */
 
                 UpdateTexture(texture, image.data);
 
@@ -237,6 +233,14 @@ int main() {
     }
 
     UnloadTexture(texture);
+    UnloadImage(image);
+
+    free(machine);
+    free(screen_buffer);
+
+#if COMPARE
+    free_benchmark_emulator(c);
+#endif
 
     printf("Emulation done.\n");
 

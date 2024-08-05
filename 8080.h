@@ -37,9 +37,10 @@ typedef struct State8080 {
 } State8080;
 
 State8080 *init_state_8080(void);
+void free_state_8080(State8080 *state);
 void print_state(State8080 *state);
 int Disassemble8080Op(unsigned char *codebuffer, int pc);
 void Emulate8080Op(State8080 *state);
-void read_rom_into_memory(State8080 *state, char *filename, uint16_t offset);
+void read_rom_into_memory(uint8_t *memory, char *filename, uint16_t offset);
 
 #endif
