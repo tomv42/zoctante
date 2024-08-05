@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define FRAME_RATE (60)
 #define CLOCK_SPEED (2000000)
@@ -104,7 +105,7 @@ int main() {
 
     /* SetTraceLogLevel(LOG_WARNING); */
     InitWindow(width, height, "zoctante - space invaders");
-    SetWindowMonitor(0);
+    SetWindowMonitor(1);
     SetWindowPosition(10, 10);
 
     // 2400-3FFF 7K video RAM
@@ -128,8 +129,8 @@ int main() {
 
     double time = GetTime();
     double time_since_last_interrupt = time;
-    // HACK: I don't know why it's not 1/120 to get 60FPS
-    double interrupt_delay = 2.0 / 120.0;           // delay between two interrupts
+    // HACK: I don't know why I get 120FPS even though the screen on only half of the interrupts
+    double interrupt_delay = 1.0 / 120.0;           // delay between two interrupts
     double interrupt_time = time + interrupt_delay; // time of the last interrupt
     state->which_interrupt = 1;
 
@@ -149,14 +150,6 @@ int main() {
 
         cycle_count = 0;
         while (cycle_count < elapsed_cycles) {
-
-#if 0
-            Disassemble8080Op(state->memory, pc);
-            printf("\n--------- MY STATE -----------\n");
-            print_state(state);
-            printf("\n------ BENCHMARK STATE -------\n");
-            i8080_debug_output(c, 1);
-#endif
 
             pc = state->pc; // store pc for debugging purposes
             opcode = &state->memory[state->pc];
@@ -178,6 +171,8 @@ int main() {
             }
             i8080_step(c);
 
+#define COMPARE 1
+#if COMPARE
             if (!compare_states(c, state)) {
                 printf("\nn = %ld\n", iteration_number);
                 printf("\nStates are different after instruction:\n");
@@ -186,14 +181,13 @@ int main() {
                 exit(1);
             }
 
-            int n = compare_memories(i8080_memory, state8080_memory);
-
-            if (n > 0) {
-                printf("\nMemories differ in %d place(s) after instruction:.\n", n);
+            if (!memories_are_equal(i8080_memory, state8080_memory)) {
+                printf("\nMemories differ after instruction:\n");
                 Disassemble8080Op(state->memory, pc);
                 print_state_comparison(state, c);
                 exit(1);
             }
+#endif
 
             /* printf("iteration: %ld\n", iteration_number); */
             iteration_number++;
@@ -245,7 +239,6 @@ int main() {
     UnloadTexture(texture);
 
     printf("Emulation done.\n");
-    compare_memories(i8080_memory, state8080_memory);
 
     CloseWindow();
     return 0;
