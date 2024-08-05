@@ -233,9 +233,8 @@ int main() {
     }
 
     UnloadTexture(texture);
-    UnloadImage(image);
 
-    free(machine);
+    free_machine(machine);
     free(screen_buffer);
 
 #if COMPARE
