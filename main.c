@@ -99,7 +99,7 @@ int main() {
 
     SpaceInvadersMachine *machine = init_machine();
     State8080 *state = machine->state;
-    read_rom_into_memory(state->memory, "invaders.concatenated", 0x0000);
+    read_rom_into_memory(state->memory, "./roms/invaders.concatenated", 0x0000);
     uint8_t *state8080_memory = state->memory;
 
 #if COMPARE

@@ -4,11 +4,11 @@
 #include <string.h>
 
 int main(void) {
-    char *filename = "cpudiag.bin";
+    char *filename = "./tests/cpudiag.bin";
     SpaceInvadersMachine *machine = init_machine();
 
     State8080 *state = machine->state;
-    read_rom_into_memory(state->memory, "cpudiag.bin", 0x100);
+    read_rom_into_memory(state->memory, filename, 0x100);
 
     // TODO: Understand these fixes
     state->pc = 0x100;
