@@ -58,6 +58,7 @@ static void port_out(void *userdata, uint8_t port, uint8_t value) {
     switch (port) {
     case 0:
         test_finished = 1;
+        break;
     case 1: {
         uint8_t operation = c->c;
 

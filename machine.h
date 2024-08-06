@@ -1,14 +1,17 @@
 #ifndef H_MACHINE
 #define H_MACHINE
 
+#include "raylib/include/raylib.h"
 #include <stdint.h>
 
 typedef struct Ports {
     uint8_t port0;
     uint8_t port1;
     uint8_t port2;
-
+    uint8_t port3;
+    uint8_t port5;
 } Ports;
+
 typedef struct HardwareShift {
     uint8_t shift_high;
     uint8_t shift_low;
@@ -17,13 +20,9 @@ typedef struct HardwareShift {
 
 typedef struct SpaceInvadersMachine {
     struct State8080 *state;
-    // uint8_t shift_high;
-    // uint8_t shift_low;
-    // uint8_t shift_offset;
     HardwareShift hardware_shift;
-    // uint8_t port1;
-    // uint8_t port2;
     Ports ports;
+    Sound sounds[9];
 } SpaceInvadersMachine;
 
 SpaceInvadersMachine *init_machine(void);

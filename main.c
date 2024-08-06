@@ -1,12 +1,15 @@
 #include "./raylib/include/raylib.h"
 #include "8080.h"
-#include "comparison.h"
-#include "i8080.h"
 #include "machine.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#if COMPARE
+#include "comparison.h"
+#include "i8080.h"
+#endif
 
 #define FRAME_RATE (60)
 #define CLOCK_SPEED (2000000)
@@ -82,8 +85,17 @@ static void copy_screen_buffer_grayscale(uint8_t *screen_buffer, uint8_t *memory
     }
 }
 
-#define COMPARE 0
 int main() {
+
+    int scale = 4;
+    int width = 224 * scale;
+    int height = 256 * scale;
+
+    /* SetTraceLogLevel(LOG_WARNING); */
+    InitWindow(width, height, "zoctante - space invaders");
+    SetWindowMonitor(1);
+    SetWindowPosition(10, 10);
+    InitAudioDevice();
 
     SpaceInvadersMachine *machine = init_machine();
     State8080 *state = machine->state;
@@ -91,6 +103,7 @@ int main() {
     uint8_t *state8080_memory = state->memory;
 
 #if COMPARE
+    printf("Initializing benchmark emulator.\n");
     i8080 *c = init_benchmark_emulator("invaders.concatenated", 0x0000);
     uint8_t *i8080_memory = get_benchmark_memory();
 #endif
@@ -98,16 +111,6 @@ int main() {
     unsigned char *opcode;
 
     long iteration_number = 0;
-    long max_iter = 60000;
-
-    int scale = 4;
-    int width = 224 * scale;
-    int height = 256 * scale;
-
-    SetTraceLogLevel(LOG_WARNING);
-    InitWindow(width, height, "zoctante - space invaders");
-    SetWindowMonitor(1);
-    SetWindowPosition(10, 10);
 
     // 2400-3FFF 7K video RAM
     uint8_t *screen_buffer = malloc(scale * 8 * 256 * 224);
@@ -129,7 +132,6 @@ int main() {
 
     double time = GetTime();
     double time_since_last_interrupt = time;
-    // FIX: I don't know why I get 120FPS even though the screen on only half of the interrupts
     double interrupt_delay = 1.0 / 120.0;           // delay between two interrupts
     double interrupt_time = time + interrupt_delay; // time of the last interrupt
     state->which_interrupt = 1;
@@ -138,7 +140,6 @@ int main() {
     double last_cycle_time = time;
     int elapsed_cycles;
     int cycle_count;
-    uint16_t pc;
 
     while (!WindowShouldClose()) {
 
@@ -158,7 +159,9 @@ int main() {
         cycle_count = 0;
         while (cycle_count < elapsed_cycles) {
 
-            pc = state->pc; // store pc for debugging purposes
+#if COMPARE
+            uint16_t pc = state->pc; // store pc for debugging purposes
+#endif
             opcode = &state->memory[state->pc];
             cycle_count += cycles_lookup[opcode[0]];
 
@@ -195,7 +198,6 @@ int main() {
             }
 #endif
 
-            /* printf("iteration: %ld\n", iteration_number); */
             iteration_number++;
         }
 
@@ -203,7 +205,6 @@ int main() {
 
         // Generate 2 screen interrupts per frame (60Hz so every 1/120s)
         if (time_since_last_interrupt > interrupt_delay) {
-            /* printf("\nGenerating Interrupt\n"); */
 
             // The system gets RST 1 when the beam is *near* the middle of the screen
             // and RST 2 when it is at the end (start of VBLANK).
@@ -214,6 +215,7 @@ int main() {
 
             // Draw on RST 2 interrupt
             if (state->which_interrupt == 2) {
+                // 2400-3FFF 7K Video RAM
                 copy_screen_buffer_grayscale(screen_buffer, &state8080_memory[0x2400], scale);
 
                 UpdateTexture(texture, image.data);
@@ -221,19 +223,17 @@ int main() {
                 BeginDrawing();
                 ClearBackground(BLACK);
                 DrawTexture(texture, (width - 224 * scale) / 2, (height - 256 * scale) / 2, WHITE);
-                DrawFPS(50, 10);
+                DrawFPS(10, 10);
                 EndDrawing();
-
-                interrupt_time = time; // use the same time as the other measures
             }
 
+            interrupt_time = time; // use the same time as the other measures
             // alternate between 1 and 2 */
             state->which_interrupt = (state->which_interrupt == 1) ? 2 : 1;
         }
     }
 
     UnloadTexture(texture);
-
     free_machine(machine);
     free(screen_buffer);
 
@@ -243,6 +243,7 @@ int main() {
 
     printf("Emulation done.\n");
 
+    CloseAudioDevice();
     CloseWindow();
     return 0;
 }

@@ -26,9 +26,6 @@ void free_state_8080(State8080 *state) {
 }
 
 void print_state(State8080 *state) {
-    /* printf("\tCY=%d, P=%d, S=%d, Z=%d, I=%d\n", state->cc.cy, state->cc.p, state->cc.s, state->cc.z, state->int_enable); */
-    /* printf("\tA=%02x, BC=%02x%02x, DE=%02x%02x, HL=%02x%02x ", state->a, state->b, state->c, state->d, state->e, state->h, state->l); */
-    /* printf("PC=%04x, SP=%04x\n", state->pc, state->sp); */
     printf("PC: %04X, AF: %02X.., BC: %02X%02X, DE: %02X%02X, HL: %02X%02X, SP: %04X", state->pc, state->a, state->b, state->c, state->d, state->e,
            state->h, state->l, state->sp);
 }
@@ -870,7 +867,7 @@ static void UnimplementedInstruction(State8080 *state) {
     exit(1);
 }
 
-static _Bool Parity(uint16_t x) {
+static inline _Bool Parity(uint16_t x) {
     uint16_t sum = 0;
 
     for (sum = 0; x > 0; x = (x >> 1)) {
@@ -879,36 +876,16 @@ static _Bool Parity(uint16_t x) {
     return (sum % 2 == 0);
 }
 
-/* static uint16_t Parity(uint16_t x) { */
-/*     int i; */
-/*     int p = 0; */
-/*     for (i = 0; i < 16; i++) { */
-/*         if (x & 0x1) */
-/*             p++; */
-/*         x = x >> 1; */
-/*     } */
-/*     return (0 == (p & 0x1)); */
-/* } */
-
-static uint16_t opcode_data(unsigned char *opcode) {
+static inline uint16_t opcode_data(unsigned char *opcode) {
     return (opcode[2] << 8) | opcode[1];
 }
 
 // TODO: understand this function
-static bool AuxiliaryCarry(uint16_t answer, uint8_t a, uint8_t b) {
+static inline bool AuxiliaryCarry(uint16_t answer, uint8_t a, uint8_t b) {
     int16_t carry = answer ^ a ^ b;
     return carry & (1 << 4);
 }
 
-/*
-flags:
-        state->cc.z = ((answer & 0xff) == 0);
-        state->cc.s = ((answer & 0x80) != 0);
-        state->cc.cy = (answer > 0xff);
-        state->cc.p = Parity(answer & 0xff);
-*/
-
-// TODO: Test the currently implemented opcodes
 void Emulate8080Op(State8080 *state) {
     unsigned char *opcode = &state->memory[state->pc];
 
@@ -2594,6 +2571,10 @@ void read_rom_into_memory(uint8_t *memory, char *filename, uint16_t offset) {
 
     uint8_t *buffer = &memory[offset];
 
-    (void)fread(buffer, fsize, 1, f);
+    size_t ret = fread(buffer, fsize, 1, f);
+    if (ret != sizeof(*buffer)) {
+        fprintf(stderr, "fread() failed: %zu\n", ret);
+        exit(EXIT_FAILURE);
+    }
     fclose(f);
 }
