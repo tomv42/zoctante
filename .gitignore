@@ -53,7 +53,7 @@ Mkfile.old
 dkms.conf
 
 # Roms
-roms/
+roms/invaders.*
 tests/
 
 # Build directory
