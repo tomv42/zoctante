@@ -3,7 +3,7 @@
 #include "machine.h"
 #include <stdint.h>
 #include <stdlib.h>
-#include <strings.h>
+#include <string.h>
 
 State8080 *benchmark_state;
 uint8_t *memory;
@@ -128,7 +128,7 @@ bool compare_states(i8080 *c, State8080 *state) {
 int memories_are_equal(uint8_t *i8080_memory, uint8_t *state8080_memory) {
     // 2000-23FF 1K RAM
     // 2400-3FFF 7K Video RAM
-    return !bcmp(i8080_memory, state8080_memory, 0x3fff - 0x2000);
+    return memcmp(i8080_memory, state8080_memory, 0x3fff - 0x2000) == 0;
 };
 
 i8080 *init_benchmark_emulator(char *filename, uint16_t offset) {
