@@ -35,6 +35,7 @@
 *.i*86
 *.x86_64
 *.hex
+zoctante*
 
 # Debug files
 *.dSYM/
@@ -54,3 +55,9 @@ dkms.conf
 # Roms
 roms/
 tests/
+
+# Build directory
+build/
+
+# Helper scripts
+*.sh

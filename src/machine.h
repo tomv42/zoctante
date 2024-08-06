@@ -1,7 +1,7 @@
 #ifndef H_MACHINE
 #define H_MACHINE
 
-#include "raylib/include/raylib.h"
+#include "raylib.h"
 #include <stdint.h>
 
 typedef struct Ports {

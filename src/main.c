@@ -1,6 +1,6 @@
-#include "./raylib/include/raylib.h"
 #include "8080.h"
 #include "machine.h"
+#include "raylib.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
