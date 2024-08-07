@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define COMPARE 0
+
 #if COMPARE
 #include "comparison.h"
 #include "i8080.h"
@@ -17,22 +19,22 @@
 // number of cycles taken for each opcode from 0x00 to 0xff
 static const uint8_t cycles_lookup[256] = {
     //  0  1   2   3   4   5   6   7   8  9   A   B   C   D   E  F
-    4, 10, 7,  5,  5,  5,  7,  4,  4, 10, 7,  5,  5,  5,  7, 4,  // 0
-    4, 10, 7,  5,  5,  5,  7,  4,  4, 10, 7,  5,  5,  5,  7, 4,  // 1
-    4, 10, 16, 5,  5,  5,  7,  4,  4, 10, 16, 5,  5,  5,  7, 4,  // 2
-    4, 10, 13, 5,  10, 10, 10, 4,  4, 10, 13, 5,  5,  5,  7, 4,  // 3
-    5, 5,  5,  5,  5,  5,  7,  5,  5, 5,  5,  5,  5,  5,  7, 5,  // 4
-    5, 5,  5,  5,  5,  5,  7,  5,  5, 5,  5,  5,  5,  5,  7, 5,  // 5
-    5, 5,  5,  5,  5,  5,  7,  5,  5, 5,  5,  5,  5,  5,  7, 5,  // 6
-    7, 7,  7,  7,  7,  7,  7,  7,  5, 5,  5,  5,  5,  5,  7, 5,  // 7
-    4, 4,  4,  4,  4,  4,  7,  4,  4, 4,  4,  4,  4,  4,  7, 4,  // 8
-    4, 4,  4,  4,  4,  4,  7,  4,  4, 4,  4,  4,  4,  4,  7, 4,  // 9
-    4, 4,  4,  4,  4,  4,  7,  4,  4, 4,  4,  4,  4,  4,  7, 4,  // A
-    4, 4,  4,  4,  4,  4,  7,  4,  4, 4,  4,  4,  4,  4,  7, 4,  // B
-    5, 10, 10, 10, 11, 11, 7,  11, 5, 10, 10, 10, 11, 17, 7, 11, // C
-    5, 10, 10, 10, 11, 11, 7,  11, 5, 10, 10, 10, 11, 17, 7, 11, // D
-    5, 10, 10, 18, 11, 11, 7,  11, 5, 5,  10, 4,  11, 17, 7, 11, // E
-    5, 10, 10, 4,  11, 11, 7,  11, 5, 5,  10, 4,  11, 17, 7, 11  // F
+    4, 10, 7, 5, 5, 5, 7, 4, 4, 10, 7, 5, 5, 5, 7, 4,           // 0
+    4, 10, 7, 5, 5, 5, 7, 4, 4, 10, 7, 5, 5, 5, 7, 4,           // 1
+    4, 10, 16, 5, 5, 5, 7, 4, 4, 10, 16, 5, 5, 5, 7, 4,         // 2
+    4, 10, 13, 5, 10, 10, 10, 4, 4, 10, 13, 5, 5, 5, 7, 4,      // 3
+    5, 5, 5, 5, 5, 5, 7, 5, 5, 5, 5, 5, 5, 5, 7, 5,             // 4
+    5, 5, 5, 5, 5, 5, 7, 5, 5, 5, 5, 5, 5, 5, 7, 5,             // 5
+    5, 5, 5, 5, 5, 5, 7, 5, 5, 5, 5, 5, 5, 5, 7, 5,             // 6
+    7, 7, 7, 7, 7, 7, 7, 7, 5, 5, 5, 5, 5, 5, 7, 5,             // 7
+    4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4,             // 8
+    4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4,             // 9
+    4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4,             // A
+    4, 4, 4, 4, 4, 4, 7, 4, 4, 4, 4, 4, 4, 4, 7, 4,             // B
+    5, 10, 10, 10, 11, 11, 7, 11, 5, 10, 10, 10, 11, 17, 7, 11, // C
+    5, 10, 10, 10, 11, 11, 7, 11, 5, 10, 10, 10, 11, 17, 7, 11, // D
+    5, 10, 10, 18, 11, 11, 7, 11, 5, 5, 10, 4, 11, 17, 7, 11,   // E
+    5, 10, 10, 4, 11, 11, 7, 11, 5, 5, 10, 4, 11, 17, 7, 11     // F
 };
 
 static void GenerateInterrupt(State8080 *state, int interrupt_number) {
@@ -59,7 +61,8 @@ static void execute_interrupt(State8080 *state, int interrupt_number) {
     }
 }
 
-static void copy_screen_buffer_grayscale(uint8_t *screen_buffer, uint8_t *memory, int scale) {
+static void copy_screen_buffer_grayscale(uint8_t *screen_buffer,
+                                         uint8_t *memory, int scale) {
     int index;
     int new_index;
     int new_row;
@@ -85,6 +88,57 @@ static void copy_screen_buffer_grayscale(uint8_t *screen_buffer, uint8_t *memory
     }
 }
 
+void advance_emulation(double dt, SpaceInvadersMachine *machine) {
+    /* cycles_per_frame += elapsed_cycles; */
+
+    State8080 *state = machine->state;
+    uint8_t *opcode;
+    int cycle_count = 0;
+
+    int elapsed_cycles = floor(dt * (double)CLOCK_SPEED);
+    while (cycle_count < elapsed_cycles) {
+        opcode = &state->memory[state->pc];
+        cycle_count += cycles_lookup[opcode[0]];
+
+        if (state->int_pending && state->int_enable && state->int_delay == 0) {
+            state->int_pending = 0;
+            state->int_enable = 0;
+
+            execute_interrupt(state, state->int_number);
+        } else if (*opcode == IN) {
+            uint8_t port = opcode[1];
+            EmulateMachineIn(machine, port);
+        } else if (*opcode == OUT) {
+            uint8_t port = opcode[1];
+            EmulateMachineOut(machine, port);
+        } else {
+            Emulate8080Op(state);
+        }
+    }
+
+#if COMPARE
+    uint16_t pc = state->pc; // store pc for debugging purposes
+#endif
+
+#if COMPARE
+    i8080_step(c);
+    if (!compare_states(c, state)) {
+        printf("\nn = %ld\n", iteration_number);
+        printf("\nStates are different after instruction:\n");
+        Disassemble8080Op(state->memory, pc);
+        print_state_comparison(state, c);
+        exit(1);
+    }
+
+    if (!memories_are_equal(i8080_memory, state8080_memory)) {
+        printf("\nMemories differ after instruction:\n");
+        Disassemble8080Op(state->memory, pc);
+        print_state_comparison(state, c);
+        exit(1);
+    }
+#endif
+}
+
 int main() {
 
     int scale = 4;
@@ -96,6 +150,7 @@ int main() {
     SetWindowMonitor(1);
     SetWindowPosition(10, 10);
     InitAudioDevice();
+    SetTargetFPS(60);
 
     SpaceInvadersMachine *machine = init_machine();
     State8080 *state = machine->state;
@@ -130,85 +185,38 @@ int main() {
     Texture2D texture = LoadTextureFromImage(image);
     printf("Loaded Texture\n");
 
-    double time = GetTime();
-    double time_since_last_interrupt = time;
-    double interrupt_delay = 1.0 / 120.0;           // delay between two interrupts
-    double interrupt_time = time + interrupt_delay; // time of the last interrupt
+    double time;
+    double time_since_last_interrupt;
+    double interrupt_delay = 1.0 / 120.0; // delay between two interrupts
+    double last_interrupt_time;           // time of the last interrupt
     state->which_interrupt = 1;
 
     double dt;
     double last_cycle_time = time;
     int elapsed_cycles;
     int cycle_count;
+    int cycles_per_frame = 0;
+
+    // init
+    // advance emulation until the first interrupt
+    dt = interrupt_delay;
+    advance_emulation(dt, machine);
+    time = GetTime();
+    last_interrupt_time = time - interrupt_delay;
 
     while (!WindowShouldClose()) {
 
-        // Handle input
-        emulate_machines_input(machine);
-        // replicate the input on the benchmark machine
-#if COMPARE
-        update_benchmark_ports(c, machine->ports);
-#endif
-
-        // Make sure everything is measured at once
         time = GetTime();
-        dt = time - last_cycle_time;
-        elapsed_cycles = floor(dt * (double)CLOCK_SPEED);
-        time_since_last_interrupt = time - interrupt_time;
-
-        cycle_count = 0;
-        while (cycle_count < elapsed_cycles) {
-
-#if COMPARE
-            uint16_t pc = state->pc; // store pc for debugging purposes
-#endif
-            opcode = &state->memory[state->pc];
-            cycle_count += cycles_lookup[opcode[0]];
-
-            if (state->int_pending && state->int_enable && state->int_delay == 0) {
-                state->int_pending = 0;
-                state->int_enable = 0;
-
-                execute_interrupt(state, state->int_number);
-            } else if (*opcode == IN) {
-                uint8_t port = opcode[1];
-                EmulateMachineIn(machine, port);
-            } else if (*opcode == OUT) {
-                uint8_t port = opcode[1];
-                EmulateMachineOut(machine, port);
-            } else {
-                Emulate8080Op(state);
-            }
-
-#if COMPARE
-            i8080_step(c);
-            if (!compare_states(c, state)) {
-                printf("\nn = %ld\n", iteration_number);
-                printf("\nStates are different after instruction:\n");
-                Disassemble8080Op(state->memory, pc);
-                print_state_comparison(state, c);
-                exit(1);
-            }
-
-            if (!memories_are_equal(i8080_memory, state8080_memory)) {
-                printf("\nMemories differ after instruction:\n");
-                Disassemble8080Op(state->memory, pc);
-                print_state_comparison(state, c);
-                exit(1);
-            }
-#endif
-
-            iteration_number++;
-        }
-
-        last_cycle_time = GetTime();
+        time_since_last_interrupt = time - last_interrupt_time;
 
         // Generate 2 screen interrupts per frame (60Hz so every 1/120s)
         if (time_since_last_interrupt > interrupt_delay) {
 
-            // The system gets RST 1 when the beam is *near* the middle of the screen
-            // and RST 2 when it is at the end (start of VBLANK).
+            // The system gets RST 1 when the beam is *near* the middle of the
+            // screen and RST 2 when it is at the end (start of VBLANK).
             GenerateInterrupt(state, state->which_interrupt);
+            last_interrupt_time = GetTime();
+
 #if COMPARE
             i8080_interrupt(c, (state->which_interrupt == 2) ? 0xd7 : 0xcf);
 #endif
@@ -216,20 +224,37 @@ int main() {
             // Draw on RST 2 interrupt
             if (state->which_interrupt == 2) {
                 // 2400-3FFF 7K Video RAM
-                copy_screen_buffer_grayscale(screen_buffer, &state8080_memory[0x2400], scale);
+                copy_screen_buffer_grayscale(screen_buffer,
+                                             &state8080_memory[0x2400], scale);
 
                 UpdateTexture(texture, image.data);
 
                 BeginDrawing();
                 ClearBackground(BLACK);
-                DrawTexture(texture, (width - 224 * scale) / 2, (height - 256 * scale) / 2, WHITE);
+                DrawTexture(texture, (width - 224 * scale) / 2,
+                            (height - 256 * scale) / 2, WHITE);
+                /* DrawText(TextFormat("cycles_per_frame:%d", cycles_per_frame), 100, 10, 20, LIME); */
                 DrawFPS(10, 10);
                 EndDrawing();
+
+                /* cycles_per_frame = 0; */
+
+                // Handle input for the next frame
+                emulate_machines_input(machine);
+
+                // replicate the input on the benchmark machine
+#if COMPARE
+                update_benchmark_ports(c, machine->ports);
+#endif
             }
 
-            interrupt_time = time; // use the same time as the other measures
-            // alternate between 1 and 2 */
+            // alternate between 1 and 2
             state->which_interrupt = (state->which_interrupt == 1) ? 2 : 1;
+
+            // advance simulation for next interrupt
+            dt = interrupt_delay;
+            advance_emulation(dt, machine);
+            last_cycle_time = GetTime();
         }
     }
 
