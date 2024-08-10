@@ -145,7 +145,7 @@ int main() {
     int width = 224 * scale;
     int height = 256 * scale;
 
-    /* SetTraceLogLevel(LOG_WARNING); */
+    SetTraceLogLevel(LOG_WARNING);
     InitWindow(width, height, "zoctante - space invaders");
     SetWindowMonitor(1);
     SetWindowPosition(10, 10);
@@ -170,7 +170,6 @@ int main() {
     // 2400-3FFF 7K video RAM
     uint8_t *screen_buffer = malloc(scale * 8 * 256 * 224);
     copy_screen_buffer_grayscale(screen_buffer, &state->memory[0x2400], scale);
-    printf("Loaded screen buffer\n");
 
     // The raster resolution is 256x224 at 60Hz
     // The monitor is rotated in the cabinet 90 degrees counter-clockwise
@@ -183,7 +182,6 @@ int main() {
     };
 
     Texture2D texture = LoadTextureFromImage(image);
-    printf("Loaded Texture\n");
 
     double time;
     double time_since_last_interrupt;
@@ -224,8 +222,8 @@ int main() {
             // Draw on RST 2 interrupt
             if (state->which_interrupt == 2) {
                 // 2400-3FFF 7K Video RAM
-                copy_screen_buffer_grayscale(screen_buffer,
-                                             &state8080_memory[0x2400], scale);
+                copy_screen_buffer_grayscale(screen_buffer, &state8080_memory[0x2400],
+                                             scale);
 
                 UpdateTexture(texture, image.data);
 
@@ -233,7 +231,8 @@ int main() {
                 ClearBackground(BLACK);
                 DrawTexture(texture, (width - 224 * scale) / 2,
                             (height - 256 * scale) / 2, WHITE);
-                /* DrawText(TextFormat("cycles_per_frame:%d", cycles_per_frame), 100, 10, 20, LIME); */
+                /* DrawText(TextFormat("cycles_per_frame:%d", cycles_per_frame), 100,
+                 * 10, 20, LIME); */
                 DrawFPS(10, 10);
                 EndDrawing();
 
@@ -265,8 +264,6 @@ int main() {
 #if COMPARE
     free_benchmark_emulator(c);
 #endif
-
-    printf("Emulation done.\n");
 
     CloseAudioDevice();
     CloseWindow();

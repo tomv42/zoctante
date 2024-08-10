@@ -21,6 +21,16 @@ SpaceInvadersMachine *init_machine(void) {
     machine->sounds[7] = LoadSound("./data/fastinvader4.wav");  // Fleet 4
     machine->sounds[8] = LoadSound("./data/ufo_lowpitch.wav");  // UFO hit
 
+    SetSoundVolume(machine->sounds[0], 0.5); // Set volume for a sound (1.0 is max level)
+    SetSoundVolume(machine->sounds[1], 0.5); // Set volume for a sound (1.0 is max level)
+    SetSoundVolume(machine->sounds[2], 0.5); // Set volume for a sound (1.0 is max level)
+    SetSoundVolume(machine->sounds[3], 0.5); // Set volume for a sound (1.0 is max level)
+    SetSoundVolume(machine->sounds[4], 0.5); // Set volume for a sound (1.0 is max level)
+    SetSoundVolume(machine->sounds[5], 0.5); // Set volume for a sound (1.0 is max level)
+    SetSoundVolume(machine->sounds[6], 0.5); // Set volume for a sound (1.0 is max level)
+    SetSoundVolume(machine->sounds[7], 0.5); // Set volume for a sound (1.0 is max level)
+    SetSoundVolume(machine->sounds[8], 0.5); // Set volume for a sound (1.0 is max level)
+
     return machine;
 }
 
@@ -144,44 +154,43 @@ static void update_ports_from_input(Ports *ports) {
     ports->port1 |= 1 << 3; // always 1
     if (IsKeyDown(KEY_C)) {
         ports->port1 |= 1 << 0; // CREDIT
-    } else if (IsKeyDown(KEY_TWO)) {
-        ports->port1 |= 1 << 1; // 2P start
-    } else if (IsKeyDown(KEY_ONE)) {
-        ports->port1 |= 1 << 2; // 1P start
-    } else if (IsKeyDown(KEY_SPACE)) {
-        ports->port1 |= 1 << 4; // 1P shoot
-        ports->port2 |= 1 << 4; // 2P shoot
-    } else if (IsKeyDown(KEY_LEFT)) {
-        ports->port1 |= 1 << 5; // 1P left
-        ports->port2 |= 1 << 5; // 2P left
-    } else if (IsKeyDown(KEY_RIGHT)) {
-        ports->port1 |= 1 << 6; // 1P right
-        ports->port2 |= 1 << 6; // 2P right
-    } else if (IsKeyDown(KEY_T)) {
-        ports->port2 |= 1 << 2; // Tilt
-    }
-    if (IsKeyUp(KEY_C)) {
+    } else if (IsKeyUp(KEY_C)) {
         ports->port1 &= ~(1 << 0); // CREDIT
     }
-    if (IsKeyUp(KEY_TWO)) {
+    if (IsKeyDown(KEY_TWO)) {
+        ports->port1 |= 1 << 1; // 2P start
+    } else if (IsKeyUp(KEY_TWO)) {
         ports->port1 &= ~(1 << 1); // 2P start
     }
-    if (IsKeyUp(KEY_ONE)) {
+    if (IsKeyDown(KEY_ONE)) {
+        ports->port1 |= 1 << 2; // 1P start
+    } else if (IsKeyUp(KEY_ONE)) {
         ports->port1 &= ~(1 << 2); // 1P start
     }
-    if (IsKeyUp(KEY_SPACE)) {
+    if (IsKeyDown(KEY_SPACE)) {
+        ports->port1 |= 1 << 4; // 1P shoot
+        ports->port2 |= 1 << 4; // 2P shoot
+    } else if (IsKeyUp(KEY_SPACE)) {
         ports->port1 &= ~(1 << 4); // 1P shoot
         ports->port2 &= ~(1 << 4); // 2P shoot
     }
-    if (IsKeyUp(KEY_LEFT)) {
+    if (IsKeyDown(KEY_LEFT)) {
+        ports->port1 |= 1 << 5; // 1P left
+        ports->port2 |= 1 << 5; // 2P left
+    } else if (IsKeyUp(KEY_LEFT)) {
         ports->port1 &= ~(1 << 5); // 1P left
         ports->port2 &= ~(1 << 5); // 2P left
     }
-    if (IsKeyUp(KEY_RIGHT)) {
+    if (IsKeyDown(KEY_RIGHT)) {
+        ports->port1 |= 1 << 6; // 1P right
+        ports->port2 |= 1 << 6; // 2P right
+    } else if (IsKeyUp(KEY_RIGHT)) {
         ports->port1 &= ~(1 << 6); // 1P right
         ports->port2 &= ~(1 << 6); // 2P right
     }
-    if (IsKeyUp(KEY_T)) {
+    if (IsKeyDown(KEY_T)) {
+        ports->port2 |= 1 << 2; // Tilt
+    } else if (IsKeyUp(KEY_T)) {
         ports->port2 &= ~(1 << 2); // Tilt
     }
 }
