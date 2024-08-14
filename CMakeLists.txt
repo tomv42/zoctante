@@ -29,6 +29,7 @@ endif()
 
 # Our Project
 
+# zoctante
 set(SOURCES
     src/main.c
     src/8080.c
@@ -53,6 +54,31 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND}
     ARGS -E echo ${CMAKE_C_FLAGS}
 )
+
+# test
+set(SOURCES
+    src/test.c
+    src/8080.c
+    src/comparison.c
+    src/test_machine.c
+    src/i8080.c
+)
+
+add_executable(test ${SOURCES})
+target_include_directories(test PUBLIC src)
+target_link_libraries(test raylib)
+
+add_custom_command(
+    TARGET test
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND}
+    ARGS -E copy $<TARGET_FILE:test> ${CMAKE_SOURCE_DIR}
+    COMMAND ${CMAKE_COMMAND}
+    ARGS -E rm $<TARGET_FILE:test>
+    COMMAND ${CMAKE_COMMAND}
+    ARGS -E echo ${CMAKE_C_FLAGS}
+)
+
 
 # Web Configurations
 if(${PLATFORM} STREQUAL "Web")

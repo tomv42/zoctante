@@ -33,7 +33,6 @@ typedef struct State8080 {
     uint8_t int_delay;
     uint8_t which_interrupt;
     uint32_t iteration_number;
-    uint8_t test_finished;
 } State8080;
 
 State8080 *init_state_8080(void);

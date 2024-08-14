@@ -56,9 +56,9 @@ static void port_out(void *userdata, uint8_t port, uint8_t value) {
     i8080 *const c = (i8080 *)userdata;
 
     switch (port) {
-    case 0:
-        test_finished = 1;
-        break;
+    /* case 0: */
+    /*     test_finished = 1; */
+    /*     break; */
     case 1: {
         uint8_t operation = c->c;
 
@@ -87,6 +87,7 @@ void update_benchmark_ports(i8080 *c, Ports ports) {
     c->ports.port2 = ports.port2;
 }
 
+// returns 1 if the states are the same, 0 otherwise
 bool compare_states(i8080 *c, State8080 *state) {
     // registers
     if (c->pc != state->pc) {
