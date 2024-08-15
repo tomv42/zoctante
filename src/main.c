@@ -117,7 +117,7 @@ int main() {
     SetWindowMonitor(1);
     SetWindowPosition(10, 10);
     InitAudioDevice();
-    SetTargetFPS(60);
+    /* SetTargetFPS(60); */
 
     SpaceInvadersMachine *machine = init_machine();
     State8080 *state = machine->state;
@@ -144,21 +144,19 @@ int main() {
 
     Texture2D texture = LoadTextureFromImage(image);
 
+    double speed = 1.0;
+
     double time;
     double time_since_last_interrupt;
-    double interrupt_delay = 1.0 / 120.0; // delay between two interrupts
-    double last_interrupt_time;           // time of the last interrupt
+    double interrupt_delay = 1.0 / (speed * 120.0); // delay between two interrupts
+    double last_interrupt_time;                     // time of the last interrupt
     state->which_interrupt = 1;
 
-    double dt;
-    double last_cycle_time = time;
-    int elapsed_cycles;
-    int cycle_count;
-    int cycles_per_frame = 0;
+    double dt = 1.0 / 120.0; // elapsed in-game time between two interrupts
 
-    // init
+    // initialisation
     // advance emulation until the first interrupt
-    dt = interrupt_delay;
+    // it's always the same amount of in game time dt
     advance_emulation(dt, machine);
     time = GetTime();
     last_interrupt_time = time - interrupt_delay;
@@ -168,16 +166,18 @@ int main() {
         time = GetTime();
         time_since_last_interrupt = time - last_interrupt_time;
 
-        // Generate 2 screen interrupts per frame (60Hz so every 1/120s)
+        // Generate 2 screen interrupts per in game frame
         if (time_since_last_interrupt > interrupt_delay) {
+            last_interrupt_time = GetTime();
 
             // The system gets RST 1 when the beam is *near* the middle of the
             // screen and RST 2 when it is at the end (start of VBLANK).
             GenerateInterrupt(state, state->which_interrupt);
-            last_interrupt_time = GetTime();
 
             // Draw on RST 2 interrupt
+            // NOTE: For now, that means that higher speed means higher framerate
             if (state->which_interrupt == 2) {
+
                 // 2400-3FFF 7K Video RAM
                 copy_screen_buffer_grayscale(screen_buffer, &state8080_memory[0x2400],
                                              scale);
@@ -199,9 +199,8 @@ int main() {
             state->which_interrupt = (state->which_interrupt == 1) ? 2 : 1;
 
             // advance simulation for next interrupt
-            dt = interrupt_delay;
+            // it's always the same amount of in game time dt
             advance_emulation(dt, machine);
-            last_cycle_time = GetTime();
         }
     }
 
