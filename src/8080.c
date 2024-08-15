@@ -861,7 +861,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         printf("RST 7");
         break;
     }
-    printf(" %02x\n", code[0]);
+    /* printf(" %02x\n", code[0]); */
 
     return opbytes;
 }
@@ -889,9 +889,9 @@ static inline uint16_t opcode_data(unsigned char *opcode) {
 }
 
 // TODO: understand this function
-static inline bool AuxiliaryCarry(uint16_t answer, uint8_t a, uint8_t b) {
+uint8_t AuxiliaryCarry(uint16_t answer, uint8_t a, uint8_t b) {
     int16_t carry = answer ^ a ^ b;
-    return carry & (1 << 4);
+    return (carry & 0x10) == 0x10;
 }
 
 void Emulate8080Op(State8080 *state) {
@@ -1016,17 +1016,12 @@ void Emulate8080Op(State8080 *state) {
         state->memory[addr] = state->a;
     } break;
     case 0x13: // INX D
-        // NOTE: Do nothing on overflow
-        {
-            /* uint32_t answer = ((state->d << 8) | state->e) + 1; */
-            /* state->d = (answer & 0xff00) >> 8; */
-            /* state->e = answer & 0xff; */
-            state->e++;
-            if (state->e == 0) {
-                state->d++;
-            }
+    {
+        state->e++;
+        if (state->e == 0) {
+            state->d++;
         }
-        break;
+    } break;
     case 0x14: // INR D
     {
         uint16_t answer = state->d + 1;
@@ -1119,17 +1114,12 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 2;
     } break;
     case 0x23: // INX H
-        // NOTE: Do nothing on overflow
-        {
-            /* uint32_t answer = ((state->h << 8) | state->l) + 1; */
-            /* state->h = (answer & 0xff00) >> 8; */
-            /* state->l = answer & 0xff; */
-            state->l++;
-            if (state->l == 0) {
-                state->h++;
-            }
+    {
+        state->l++;
+        if (state->l == 0) {
+            state->h++;
         }
-        break;
+    } break;
     case 0x24: // INR H
     {
         uint16_t answer = state->h + 1;
@@ -1160,10 +1150,11 @@ void Emulate8080Op(State8080 *state) {
         if (state->cc.ac || ((answer & 0x0f) > 0x09)) {
             answer += 0x06;
             added += 0x06;
+            cy = answer > 0xff;
         }
-        if (state->cc.cy || ((answer & 0xf0) > 0x90)) {
+        if (state->cc.cy || cy || ((answer & 0xf0) > 0x90)) {
             answer += 0x60;
-            added += 0x60;
+            /* added += 0x60; */
             cy = 1;
         }
         state->cc.z = ((answer & 0xff) == 0);
@@ -1172,6 +1163,7 @@ void Emulate8080Op(State8080 *state) {
         state->cc.cy = cy;
         /* state->cc.cy = (answer > 0xff); */
         state->cc.ac = AuxiliaryCarry(answer, state->a, added);
+        /* state->cc.ac = ac; */
         state->a = answer & 0xff;
     } break;
     case 0x28: // NOP
@@ -1254,7 +1246,7 @@ void Emulate8080Op(State8080 *state) {
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->memory[addr], 0xfe);
+        state->cc.ac = AuxiliaryCarry(answer, state->memory[addr], ~1);
         state->memory[addr] -= 1;
     } break;
     case 0x36: // MVI M, data
@@ -1300,7 +1292,7 @@ void Emulate8080Op(State8080 *state) {
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, 0xfe);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~1);
         state->a = answer;
     } break;
     case 0x3e: // MVI A, data
@@ -1610,9 +1602,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->b + state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, state->b + state->cc.cy);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->b);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x89: // ADC C
@@ -1620,9 +1612,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->c + state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, state->c + state->cc.cy);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->c);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x8a: // ADC D
@@ -1630,9 +1622,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->d + state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, state->d + state->cc.cy);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->d);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x8b: // ADC E
@@ -1640,9 +1632,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->e + state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, state->e + state->cc.cy);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->e);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x8c: // ADC H
@@ -1650,9 +1642,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->h + state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, state->h + state->cc.cy);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->h);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x8d: // ADC L
@@ -1660,9 +1652,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->l + state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, state->l + state->cc.cy);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->l);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x8e: // ADC M
@@ -1671,9 +1663,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a + state->memory[addr] + state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, state->memory[addr] + state->cc.cy);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->memory[addr]);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x8f: // ADC A
@@ -1681,9 +1673,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a + (uint16_t)state->a + state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, state->a + state->cc.cy);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, state->a);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x90: // SUB B
@@ -1773,9 +1765,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a - (uint16_t)state->b - state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, ~(state->b + state->cc.cy));
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->b);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x99: // SBB C
@@ -1783,9 +1775,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a - (uint16_t)state->c - state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, ~(state->c + state->cc.cy));
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->c);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x9a: // SBB D
@@ -1793,9 +1785,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a - (uint16_t)state->d - state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, ~(state->d + state->cc.cy));
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->d);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x9b: // SBB E
@@ -1803,9 +1795,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a - (uint16_t)state->e - state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, ~(state->e + state->cc.cy));
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->e);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x9c: // SBB H
@@ -1813,9 +1805,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a - (uint16_t)state->h - state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, ~(state->h + state->cc.cy));
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->h);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x9d: // SBB L
@@ -1823,9 +1815,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a - (uint16_t)state->l - state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, ~(state->l + state->cc.cy));
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->l);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x9e: // SBB M
@@ -1834,9 +1826,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a - (uint16_t)state->memory[addr] - state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, ~(state->memory[addr] + state->cc.cy));
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->memory[addr]);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0x9f: // SBB A
@@ -1844,9 +1836,9 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a - (uint16_t)state->a - state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, ~(state->a + state->cc.cy));
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~state->a);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
     } break;
     case 0xa0: // ANA B
@@ -2226,8 +2218,12 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 1;
     } break;
     case 0xc7: // RST 0
-        UnimplementedInstruction(state);
-        break;
+    {
+        state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+        state->memory[state->sp - 2] = state->pc & 0xff;
+        state->sp -= 2;
+        state->pc = 0;
+    } break;
     case 0xc8: // RZ
         if (state->cc.z == 1) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
@@ -2272,19 +2268,18 @@ void Emulate8080Op(State8080 *state) {
         uint16_t answer = (uint16_t)state->a + opcode[1] + state->cc.cy;
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
-        state->cc.cy = (answer > 0xff);
         state->cc.p = Parity(answer & 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, opcode[1] + state->cc.cy);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, opcode[1]);
+        state->cc.cy = (answer > 0xff);
         state->a = answer & 0xff;
         state->pc += 1;
     } break;
     case 0xcf: // RST 1
     {
-
         state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
         state->memory[state->sp - 2] = state->pc & 0xff;
         state->sp -= 2;
-        state->pc = 0x08;
+        state->pc = 8;
     } break;
     case 0xd0: // RNC
         if (state->cc.cy == 0) {
@@ -2341,7 +2336,7 @@ void Emulate8080Op(State8080 *state) {
         state->memory[state->sp - 2] = state->pc & 0xff;
         state->sp -= 2;
 
-        state->pc = 0x10;
+        state->pc = 16;
     } break;
     case 0xd8: // RC
         if (state->cc.cy == 1) {
@@ -2381,14 +2376,18 @@ void Emulate8080Op(State8080 *state) {
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.p = Parity(answer & 0xff);
+        state->cc.ac = AuxiliaryCarry(answer, state->a, ~opcode[1]);
         state->cc.cy = (answer > 0xff);
-        state->cc.ac = AuxiliaryCarry(answer, state->a, ~(opcode[1] + state->cc.cy));
         state->a = answer & 0xff;
         state->pc += 1;
     } break;
     case 0xdf: // RST 3
-        UnimplementedInstruction(state);
-        break;
+    {
+        state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+        state->memory[state->sp - 2] = state->pc & 0xff;
+        state->sp -= 2;
+        state->pc = 24;
+    } break;
     case 0xe0: // RPO
         if (state->cc.p == 0) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
@@ -2445,8 +2444,12 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 1;
     } break;
     case 0xe7: // RST 4
-        UnimplementedInstruction(state);
-        break;
+    {
+        state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+        state->memory[state->sp - 2] = state->pc & 0xff;
+        state->sp -= 2;
+        state->pc = 32;
+    } break;
     case 0xe8: // RPE
         if (state->cc.p == 1) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
@@ -2498,8 +2501,12 @@ void Emulate8080Op(State8080 *state) {
         state->pc += 1;
     } break;
     case 0xef: // RST 5
-        UnimplementedInstruction(state);
-        break;
+    {
+        state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+        state->memory[state->sp - 2] = state->pc & 0xff;
+        state->sp -= 2;
+        state->pc = 40;
+    } break;
     case 0xf0: // RP
         if (state->cc.s == 0) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
@@ -2565,8 +2572,12 @@ void Emulate8080Op(State8080 *state) {
 
     } break;
     case 0xf7: // RST 6
-        UnimplementedInstruction(state);
-        break;
+    {
+        state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+        state->memory[state->sp - 2] = state->pc & 0xff;
+        state->sp -= 2;
+        state->pc = 48;
+    } break;
     case 0xf8: // RM
         if (state->cc.s == 1) {
             state->pc = (((uint16_t)(state->memory[state->sp + 1])) << 8) | (uint16_t)(state->memory[state->sp]);
@@ -2602,17 +2613,23 @@ void Emulate8080Op(State8080 *state) {
         break;
     case 0xfe: // CPI data
     {
-        uint8_t answer = state->a - opcode[1];
+        uint16_t answer = state->a - opcode[1];
         state->cc.z = ((answer & 0xff) == 0);
         state->cc.s = ((answer & 0x80) == 0x80);
         state->cc.cy = (state->a < opcode[1]);
         state->cc.p = Parity(answer & 0xff);
+        /* state->cc.ac = (~(state->a ^ answer ^ opcode[1]) & 0x10) == 0x10; */
+        /* state->cc.ac = ((state->a ^ answer ^ ~opcode[1]) & 0x10) == 0x10; */
         state->cc.ac = AuxiliaryCarry(answer, state->a, ~opcode[1]);
         state->pc += 1;
     } break;
-    case 0xff: // DI
-        state->int_enable = 0;
-        break;
+    case 0xff: // RST 7
+    {
+        state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
+        state->memory[state->sp - 2] = state->pc & 0xff;
+        state->sp -= 2;
+        state->pc = 56;
+    } break;
     }
 }
 
