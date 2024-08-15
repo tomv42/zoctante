@@ -6,14 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define COMPARE 0
-
-#if COMPARE
-#include "comparison.h"
-#include "i8080.h"
-#endif
-
-#define FRAME_RATE (60)
 #define CLOCK_SPEED (2000000)
 
 // number of cycles taken for each opcode from 0x00 to 0xff
@@ -46,8 +38,8 @@ static void execute_interrupt(State8080 *state, int interrupt_number) {
     state->memory[state->sp - 1] = (state->pc >> 8) & 0xff;
     state->memory[state->sp - 2] = state->pc & 0xff;
     state->sp -= 2;
-    /* state->pc = 8 * interrupt_number; */
 
+    /* state->pc = 8 * interrupt_number; */
     switch (interrupt_number) {
     case 1:
         state->pc = 0x08;
@@ -88,9 +80,7 @@ static void copy_screen_buffer_grayscale(uint8_t *screen_buffer,
     }
 }
 
-void advance_emulation(double dt, SpaceInvadersMachine *machine) {
-    /* cycles_per_frame += elapsed_cycles; */
-
+static void advance_emulation(double dt, SpaceInvadersMachine *machine) {
     State8080 *state = machine->state;
     uint8_t *opcode;
     int cycle_count = 0;
@@ -103,7 +93,6 @@ void advance_emulation(double dt, SpaceInvadersMachine *machine) {
         if (state->int_pending && state->int_enable && state->int_delay == 0) {
             state->int_pending = 0;
             state->int_enable = 0;
-
             execute_interrupt(state, state->int_number);
         } else if (*opcode == IN) {
             uint8_t port = opcode[1];
@@ -115,28 +104,6 @@ void advance_emulation(double dt, SpaceInvadersMachine *machine) {
             Emulate8080Op(state);
         }
     }
-
-#if COMPARE
-    uint16_t pc = state->pc; // store pc for debugging purposes
-#endif
-
-#if COMPARE
-    i8080_step(c);
-    if (!compare_states(c, state)) {
-        printf("\nn = %ld\n", iteration_number);
-        printf("\nStates are different after instruction:\n");
-        Disassemble8080Op(state->memory, pc);
-        print_state_comparison(state, c);
-        exit(1);
-    }
-
-    if (!memories_are_equal(i8080_memory, state8080_memory)) {
-        printf("\nMemories differ after instruction:\n");
-        Disassemble8080Op(state->memory, pc);
-        print_state_comparison(state, c);
-        exit(1);
-    }
-#endif
 }
 
 int main() {
@@ -156,12 +123,6 @@ int main() {
     State8080 *state = machine->state;
     read_rom_into_memory(state->memory, "./roms/invaders.concatenated", 0x0000);
     uint8_t *state8080_memory = state->memory;
-
-#if COMPARE
-    printf("Initializing benchmark emulator.\n");
-    i8080 *c = init_benchmark_emulator("invaders.concatenated", 0x0000);
-    uint8_t *i8080_memory = get_benchmark_memory();
-#endif
 
     unsigned char *opcode;
 
@@ -215,10 +176,6 @@ int main() {
             GenerateInterrupt(state, state->which_interrupt);
             last_interrupt_time = GetTime();
 
-#if COMPARE
-            i8080_interrupt(c, (state->which_interrupt == 2) ? 0xd7 : 0xcf);
-#endif
-
             // Draw on RST 2 interrupt
             if (state->which_interrupt == 2) {
                 // 2400-3FFF 7K Video RAM
@@ -231,20 +188,11 @@ int main() {
                 ClearBackground(BLACK);
                 DrawTexture(texture, (width - 224 * scale) / 2,
                             (height - 256 * scale) / 2, WHITE);
-                /* DrawText(TextFormat("cycles_per_frame:%d", cycles_per_frame), 100,
-                 * 10, 20, LIME); */
                 DrawFPS(10, 10);
                 EndDrawing();
 
-                /* cycles_per_frame = 0; */
-
                 // Handle input for the next frame
                 emulate_machines_input(machine);
-
-                // replicate the input on the benchmark machine
-#if COMPARE
-                update_benchmark_ports(c, machine->ports);
-#endif
             }
 
             // alternate between 1 and 2
@@ -260,10 +208,6 @@ int main() {
     UnloadTexture(texture);
     free_machine(machine);
     free(screen_buffer);
-
-#if COMPARE
-    free_benchmark_emulator(c);
-#endif
 
     CloseAudioDevice();
     CloseWindow();

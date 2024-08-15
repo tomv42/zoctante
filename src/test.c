@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 int main(void) {
-    char *filename = "./tests/CPUTEST.COM";
+    char *filename = "./tests/8080EXM.COM";
 
     printf("Testing %s\n", filename);
     printf("\n--------------------------\n");

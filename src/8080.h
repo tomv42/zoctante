@@ -42,6 +42,5 @@ void print_state(State8080 *state);
 int Disassemble8080Op(unsigned char *codebuffer, int pc);
 void Emulate8080Op(State8080 *state);
 void read_rom_into_memory(uint8_t *memory, char *filename, uint16_t offset);
-uint8_t AuxiliaryCarry(uint16_t answer, uint8_t a, uint8_t b);
 
 #endif
