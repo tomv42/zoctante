@@ -65,6 +65,9 @@ raygui-4.0/
 # Helper scripts
 *.sh
 
+# raygui
+raygui-4.0/
+
 # clang
 .cache/
 .clang-format

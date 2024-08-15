@@ -6,6 +6,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#define RAYGUI_IMPLEMENTATION
+
+#include "raygui.h"
+
 #define CLOCK_SPEED (2000000)
 
 // number of cycles taken for each opcode from 0x00 to 0xff
@@ -55,27 +59,37 @@ static void execute_interrupt(State8080 *state, int interrupt_number) {
 
 static void copy_screen_buffer_grayscale(uint8_t *screen_buffer,
                                          uint8_t *memory, int scale) {
+    /* int index; */
+    /* int new_index; */
+    /* int new_row; */
+    /* int new_col; */
+    /* for (int i = 0; i < 256 * 224 / 8; i++) { */
+    /*     uint8_t byte = memory[i]; */
+    /*     for (int xs = 0; xs < scale; xs++) { */
+    /*         for (int ys = 0; ys < scale; ys++) { */
+    /*             for (int j = 0; j < 8; j++) { */
+    /*                 uint8_t bit = (byte >> j) % 2; */
+    /**/
+    /*                 index = 8 * i + j; */
+    /*                 new_row = 256 - index % 256; */
+    /*                 new_col = index / 256; */
+    /*                 new_index = new_row * 224 * scale * scale + new_col * scale; */
+    /*                 new_index += xs; */
+    /*                 new_index += scale * 224 * ys; */
+    /**/
+    /*                 screen_buffer[new_index] = 0xff * bit; */
+    /*             } */
+    /*         } */
+    /*     } */
+    /* } */
     int index;
-    int new_index;
-    int new_row;
-    int new_col;
     for (int i = 0; i < 256 * 224 / 8; i++) {
         uint8_t byte = memory[i];
-        for (int xs = 0; xs < scale; xs++) {
-            for (int ys = 0; ys < scale; ys++) {
-                for (int j = 0; j < 8; j++) {
-                    uint8_t bit = (byte >> j) % 2;
+        for (int j = 0; j < 8; j++) {
+            uint8_t bit = (byte >> j) % 2;
 
-                    index = 8 * i + j;
-                    new_row = 256 - index % 256;
-                    new_col = index / 256;
-                    new_index = new_row * 224 * scale * scale + new_col * scale;
-                    new_index += xs;
-                    new_index += scale * 224 * ys;
-
-                    screen_buffer[new_index] = 0xff * bit;
-                }
-            }
+            index = 8 * i + j;
+            screen_buffer[index] = 0xff * bit;
         }
     }
 }
@@ -108,14 +122,31 @@ static void advance_emulation(double dt, SpaceInvadersMachine *machine) {
 
 int main() {
 
-    int scale = 4;
-    int width = 224 * scale;
-    int height = 256 * scale;
+    int base_scale = 4;
+    int scale = base_scale;
+    int game_window_width = 224 * scale;
+    int game_window_height = 256 * scale;
+    int window_width = game_window_height + 100 * scale;
+    int window_height = game_window_height;
 
     SetTraceLogLevel(LOG_WARNING);
-    InitWindow(width, height, "zoctante - space invaders");
-    SetWindowMonitor(1);
-    SetWindowPosition(10, 10);
+    InitWindow(window_width, window_height, "zoctante - space invaders");
+
+    GuiSetStyle(DEFAULT, TEXT_SIZE, scale * 8);
+    GuiSetStyle(VALUEBOX, TEXT_PADDING, 10);
+
+    int monitor = 1;
+    const char *monitor_name = GetMonitorName(monitor);
+    Vector2 monitor_pos = GetMonitorPosition(monitor);
+    int monitor_height = GetMonitorHeight(monitor);
+    int monitor_width = GetMonitorWidth(monitor);
+
+    printf("monitor %s=%d", monitor_name, monitor);
+    SetWindowMonitor(monitor);
+
+    int window_x = (int)monitor_pos.x + (monitor_width - window_width) / 2;
+    int window_y = (int)monitor_pos.y + (monitor_height - window_height) / 2;
+    SetWindowPosition(window_x, window_y);
     InitAudioDevice();
     /* SetTargetFPS(60); */
 
@@ -137,8 +168,10 @@ int main() {
     Image image = {
         .format = (int)PIXELFORMAT_UNCOMPRESSED_GRAYSCALE,
         .mipmaps = 1,
-        .width = scale * 224,
-        .height = scale * 256,
+        /* .width = scale * 224, */
+        /* .height = scale * 256, */
+        .width = 256,
+        .height = 224,
         .data = screen_buffer,
     };
 
@@ -160,6 +193,11 @@ int main() {
     advance_emulation(dt, machine);
     time = GetTime();
     last_interrupt_time = time - interrupt_delay;
+
+    bool showMessageBox = false;
+    bool edit_scale = false;
+
+    int new_scale = scale;
 
     while (!WindowShouldClose()) {
 
@@ -185,10 +223,31 @@ int main() {
                 UpdateTexture(texture, image.data);
 
                 BeginDrawing();
-                ClearBackground(BLACK);
-                DrawTexture(texture, (width - 224 * scale) / 2,
-                            (height - 256 * scale) / 2, WHITE);
+
+                ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)));
+
+                // tilt
+                /* DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){0, 0}, 10, WHITE); */
+
+                DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){scale * 256, 0}, -90, WHITE);
+
                 DrawFPS(10, 10);
+                Rectangle scale_box = {
+                    224 * base_scale + 6 * base_scale + (float)MeasureText("Scale:", GuiGetStyle(DEFAULT, TEXT_SIZE)) + (float)GuiGetStyle(VALUEBOX, TEXT_PADDING),
+                    6 * base_scale,
+                    10 * base_scale,
+                    10 * base_scale,
+                };
+                if (GuiValueBox(scale_box, "Scale:", &new_scale, 0, 5, edit_scale)) {
+                    edit_scale = !edit_scale;
+                } else {
+                    if (!edit_scale && new_scale != scale) {
+                        scale = new_scale;
+                        game_window_width = 224 * scale;
+                        game_window_height = 256 * scale;
+                    }
+                }
+
                 EndDrawing();
 
                 // Handle input for the next frame
