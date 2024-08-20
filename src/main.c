@@ -120,6 +120,8 @@ static void advance_emulation(double dt, SpaceInvadersMachine *machine) {
     }
 }
 
+void CustomGuiTabBar(Rectangle bounds, const char **text, int count, int *active);
+
 int main() {
 
     int base_scale = 4;
@@ -132,7 +134,7 @@ int main() {
     SetTraceLogLevel(LOG_WARNING);
     InitWindow(window_width, window_height, "zoctante - space invaders");
 
-    GuiSetStyle(DEFAULT, TEXT_SIZE, scale * 8);
+    GuiSetStyle(DEFAULT, TEXT_SIZE, scale * 7);
     GuiSetStyle(VALUEBOX, TEXT_PADDING, 10);
     GuiSetStyle(VALUEBOX, BORDER_WIDTH, 0);
 
@@ -149,7 +151,6 @@ int main() {
     int window_y = (int)monitor_pos.y + (monitor_height - window_height) / 2;
     SetWindowPosition(window_x, window_y);
     InitAudioDevice();
-    /* SetTargetFPS(60); */
 
     SpaceInvadersMachine *machine = init_machine();
     State8080 *state = machine->state;
@@ -186,6 +187,9 @@ int main() {
     double last_interrupt_time;                     // time of the last interrupt
     state->which_interrupt = 1;
 
+    double time_since_last_draw;
+    double frame_dt = 1.0 / 60.0;
+
     double dt = 1.0 / 120.0; // elapsed in-game time between two interrupts
 
     // initialisation
@@ -194,73 +198,128 @@ int main() {
     advance_emulation(dt, machine);
     time = GetTime();
     last_interrupt_time = time - interrupt_delay;
+    time_since_last_draw = frame_dt;
 
-    bool showMessageBox = false;
+    bool update_screen = false;
+
+    // Gui variables
     bool edit_scale = false;
+    bool paused = false;
 
     int new_scale = scale;
 
+    const int nb_tabs = 3;
+    const char *tab_text[3] = {"settings", "controls", "debug"};
+    int active_tab = 0;
+
     while (!WindowShouldClose()) {
 
-        time = GetTime();
-        time_since_last_interrupt = time - last_interrupt_time;
+        if (!paused) {
+            time = GetTime();
+            time_since_last_interrupt = time - last_interrupt_time;
 
-        // Generate 2 screen interrupts per in game frame
-        if (time_since_last_interrupt > interrupt_delay) {
-            last_interrupt_time = GetTime();
+            // Generate 2 screen interrupts per in game frame
+            if (time_since_last_interrupt > interrupt_delay) {
 
-            // The system gets RST 1 when the beam is *near* the middle of the
-            // screen and RST 2 when it is at the end (start of VBLANK).
-            GenerateInterrupt(state, state->which_interrupt);
+                last_interrupt_time = GetTime();
 
-            // Draw on RST 2 interrupt
-            // NOTE: For now, that means that higher speed means higher framerate
-            if (state->which_interrupt == 2) {
+                // The system gets RST 1 when the beam is *near* the middle of the
+                // screen and RST 2 when it is at the end (start of VBLANK).
+                GenerateInterrupt(state, state->which_interrupt);
 
-                // 2400-3FFF 7K Video RAM
-                copy_screen_buffer_grayscale(screen_buffer, &state8080_memory[0x2400],
-                                             scale);
+                // Update the game screen on RST 2 interrupt
+                // NOTE: For now, that means that higher speed means higher framerate
+                if (state->which_interrupt == 2) {
 
-                UpdateTexture(texture, image.data);
+                    // 2400-3FFF 7K Video RAM
+                    copy_screen_buffer_grayscale(screen_buffer, &state8080_memory[0x2400],
+                                                 scale);
 
-                BeginDrawing();
+                    UpdateTexture(texture, image.data);
 
-                ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)));
+                    update_screen = true;
+                }
 
-                // tilt
-                /* DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){0, 0}, 10, WHITE); */
+                // Handle input for the next frame
+                emulate_machines_input(machine);
 
-                DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){scale * 256, 0}, -90, WHITE);
+                // alternate between 1 and 2
+                state->which_interrupt = (state->which_interrupt == 1) ? 2 : 1;
 
-                DrawFPS(10, 10);
+                // advance simulation for next interrupt
+                // it's always the same amount of in game time dt
+                advance_emulation(dt, machine);
+            }
+        }
+
+        // When the game plays, the display is driven by update_screen
+        // When the game is paused, we need to manually keep track of the elapsed time to update the gui
+        if (update_screen || GetTime() - time_since_last_draw > frame_dt) {
+            time_since_last_draw = GetTime();
+            update_screen = false;
+
+            BeginDrawing();
+            ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)));
+
+            // tilt
+            /* DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){0, 0}, 10, WHITE); */
+
+            DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){scale * 256, 0}, -90, WHITE);
+
+            DrawFPS(10, 10);
+
+            Rectangle tab_bounds = {
+                224 * base_scale + 6 * base_scale,
+                6 * base_scale,
+                100 * base_scale,
+                10 * base_scale,
+            };
+
+            CustomGuiTabBar(tab_bounds, &tab_text[0], nb_tabs, &active_tab);
+
+            if (active_tab == 0) {
                 Rectangle scale_box = {
                     224 * base_scale + 6 * base_scale + (float)MeasureText("Scale:", GuiGetStyle(DEFAULT, TEXT_SIZE)) + (float)GuiGetStyle(VALUEBOX, TEXT_PADDING),
-                    6 * base_scale,
+                    6 * base_scale + 16 * base_scale,
                     10 * base_scale,
                     10 * base_scale,
                 };
                 if (GuiValueBox(scale_box, "Scale:", &new_scale, 1, 4, edit_scale)) {
                     edit_scale = !edit_scale;
+                    paused = true;
                 } else {
                     if (!edit_scale && new_scale != scale) {
                         scale = new_scale;
                         game_window_width = 224 * scale;
                         game_window_height = 256 * scale;
                     }
+                    if (!edit_scale) {
+                        paused = false;
+                    }
                 }
-
-                EndDrawing();
-
-                // Handle input for the next frame
-                emulate_machines_input(machine);
+            } else if (active_tab == 1) {
+                int nb_controls = 7;
+                char *controls_text[7] = {
+                    "c = coin",
+                    "1 = start a game in one-player mode",
+                    "2 = start a game in two-player mode",
+                    "left = move the player left",
+                    "right = move the player right",
+                    "space = shoot",
+                    "t = tilt",
+                };
+                for (int i = 0; i < nb_controls; i++) {
+                    Rectangle control_box = {
+                        224 * base_scale + 6 * base_scale,
+                        0.5 * GuiGetStyle(DEFAULT, TEXT_SIZE) + 6 * base_scale + (i + 1) * 16 * base_scale,
+                        220 * base_scale,
+                        0,
+                    };
+                    GuiLabel(control_box, controls_text[i]);
+                }
             }
 
-            // alternate between 1 and 2
-            state->which_interrupt = (state->which_interrupt == 1) ? 2 : 1;
-
-            // advance simulation for next interrupt
-            // it's always the same amount of in game time dt
-            advance_emulation(dt, machine);
+            EndDrawing();
         }
     }
 
@@ -271,4 +330,60 @@ int main() {
     CloseAudioDevice();
     CloseWindow();
     return 0;
+}
+
+void CustomGuiTabBar(Rectangle bounds, const char **text, int count, int *active) {
+    /* #define RAYGUI_TABBAR_ITEM_WIDTH 160 */
+
+    int result = -1;
+    // GuiState state = guiState;
+
+    Rectangle tabBounds = {bounds.x, bounds.y, 160, bounds.height};
+
+    if (*active < 0)
+        *active = 0;
+    else if (*active > count - 1)
+        *active = count - 1;
+
+    int offsetX = 0; // Required in case tabs go out of screen
+    offsetX = (*active + 2) * RAYGUI_TABBAR_ITEM_WIDTH - GetScreenWidth();
+    if (offsetX < 0)
+        offsetX = 0;
+
+    bool toggle = false; // Required for individual toggles
+
+    // Draw control
+    //--------------------------------------------------------------------
+    for (int i = 0; i < count; i++) {
+        tabBounds.x = bounds.x + (RAYGUI_TABBAR_ITEM_WIDTH + 4) * i - offsetX;
+
+        if (tabBounds.x < GetScreenWidth()) {
+            // Draw tabs as toggle controls
+            int textAlignment = GuiGetStyle(TOGGLE, TEXT_ALIGNMENT);
+            int textPadding = GuiGetStyle(TOGGLE, TEXT_PADDING);
+            int textSize = GuiGetStyle(DEFAULT, TEXT_SIZE);
+            GuiSetStyle(TOGGLE, TEXT_ALIGNMENT, TEXT_ALIGN_MIDDLE);
+            GuiSetStyle(TOGGLE, TEXT_PADDING, 0);
+            GuiSetStyle(DEFAULT, TEXT_SIZE, textSize + 2);
+
+            if (i == (*active)) {
+                toggle = true;
+                GuiToggle(tabBounds, text[i], &toggle);
+            } else {
+                toggle = false;
+                /* GuiToggle(tabBounds, GuiIconText(ICON_NONE, text[i]), &toggle); */
+                GuiToggle(tabBounds, text[i], &toggle);
+                if (toggle)
+                    *active = i;
+            }
+
+            GuiSetStyle(TOGGLE, TEXT_PADDING, textPadding);
+            GuiSetStyle(TOGGLE, TEXT_ALIGNMENT, textAlignment);
+            GuiSetStyle(DEFAULT, TEXT_SIZE, textSize);
+        }
+    }
+
+    // Draw tab-bar bottom line
+    GuiDrawRectangle(RAYGUI_CLITERAL(Rectangle){bounds.x, bounds.y + bounds.height - 1, bounds.width, 1}, 0, BLANK, GetColor(GuiGetStyle(TOGGLE, BORDER_COLOR_NORMAL)));
+    //--------------------------------------------------------------------
 }
