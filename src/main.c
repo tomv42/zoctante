@@ -179,7 +179,7 @@ int main() {
 
     Texture2D texture = LoadTextureFromImage(image);
 
-    double speed = 1.0;
+    float speed = 1.0;
 
     double time;
     double time_since_last_interrupt;
@@ -239,11 +239,19 @@ int main() {
 
                     UpdateTexture(texture, image.data);
 
-                    update_screen = true;
+                    /* update_screen = true; */
                 }
 
                 // Handle input for the next frame
                 emulate_machines_input(machine);
+
+                if (IsKeyDown(KEY_T)) {
+                    tilt_bounce = 660;
+                } else {
+                    if (tilt_bounce > 0) {
+                        tilt_bounce--;
+                    }
+                }
 
                 // alternate between 1 and 2
                 state->which_interrupt = (state->which_interrupt == 1) ? 2 : 1;
@@ -258,19 +266,12 @@ int main() {
         // When the game is paused, we need to manually keep track of the elapsed time to update the gui
         if (update_screen || GetTime() - time_since_last_draw > frame_dt) {
             time_since_last_draw = GetTime();
-            update_screen = false;
+            /* update_screen = false; */
+            paused = false;
 
             BeginDrawing();
             ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)));
 
-            // tilt
-            if (IsKeyDown(KEY_T)) {
-                tilt_bounce = 330;
-            } else {
-                if (tilt_bounce > 0) {
-                    tilt_bounce--;
-                }
-            }
             if (tilt_bounce != 0) {
                 DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){0, 0}, 10, WHITE);
             } else {
@@ -289,15 +290,15 @@ int main() {
             CustomGuiTabBar(tab_bounds, &tab_text[0], nb_tabs, &active_tab);
 
             if (active_tab == 0) {
+
                 Rectangle scale_box = {
-                    224 * base_scale + 6 * base_scale + (float)MeasureText("Scale:", GuiGetStyle(DEFAULT, TEXT_SIZE)) + (float)GuiGetStyle(VALUEBOX, TEXT_PADDING),
+                    224 * base_scale + 6 * base_scale + (float)MeasureText("scale = ", GuiGetStyle(DEFAULT, TEXT_SIZE)),
                     6 * base_scale + 16 * base_scale,
                     10 * base_scale,
                     10 * base_scale,
                 };
-                if (GuiValueBox(scale_box, "Scale:", &new_scale, 1, 4, edit_scale)) {
+                if (GuiValueBox(scale_box, "scale = ", &new_scale, 1, 4, edit_scale)) {
                     edit_scale = !edit_scale;
-                    paused = edit_scale;
                 } else {
                     if (!edit_scale && new_scale != scale) {
                         scale = new_scale;
@@ -305,7 +306,25 @@ int main() {
                         game_window_height = 256 * scale;
                     }
                 }
+                if (edit_scale) {
+                    paused = true;
+                }
+
+                Rectangle speed_slider_box = {
+                    224 * base_scale + 6 * base_scale + (float)MeasureText("speed ", GuiGetStyle(DEFAULT, TEXT_SIZE)),
+                    6 * base_scale + 2 * 16 * base_scale,
+                    90 * base_scale,
+                    10 * base_scale,
+                };
+                GuiSlider(speed_slider_box, "speed ", TextFormat("%0.2f", speed), &speed, 1.0, 10.0);
+                if (guiSliderDragging) {
+                    paused = true;
+                }
+                // update variables using speed
+                interrupt_delay = 1.0 / (speed * 120.0);
+
             } else if (active_tab == 1) {
+
                 int nb_controls = 7;
                 char *controls_text[7] = {
                     "c = coin",
@@ -316,14 +335,16 @@ int main() {
                     "space = shoot",
                     "t = tilt",
                 };
+                Rectangle control_box = {
+                    224 * base_scale + 6 * base_scale,
+                    0.5 * GuiGetStyle(DEFAULT, TEXT_SIZE) + 6 * base_scale + 16 * base_scale,
+                    220 * base_scale,
+                    0,
+                };
+
                 for (int i = 0; i < nb_controls; i++) {
-                    Rectangle control_box = {
-                        224 * base_scale + 6 * base_scale,
-                        0.5 * GuiGetStyle(DEFAULT, TEXT_SIZE) + 6 * base_scale + (i + 1) * 16 * base_scale,
-                        220 * base_scale,
-                        0,
-                    };
                     GuiLabel(control_box, controls_text[i]);
+                    control_box.y += 16 * base_scale;
                 }
             }
 
