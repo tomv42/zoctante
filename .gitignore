@@ -59,6 +59,9 @@ tests/
 # Build directory
 build/
 
+# Other
+raygui-4.0/
+
 # Helper scripts
 *.sh
 

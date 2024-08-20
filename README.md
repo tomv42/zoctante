@@ -4,11 +4,13 @@ Yet another 8080 emulator written in C.
 
 > 8080 = deux octantes = 2 zoctantes
 
+![main screen screenshot](./space-invaders.png)
+
 # How to run it
 
 Put the space invaders rom into the [rom](./roms/) folder. See [instructions](./roms/README.md).
 
-After that run the following to build the executable.
+After that run the following from the root directory to build the executable.
 ```bash
 cmake -S . -B build/ -D CMAKE_BUILD_TYPE=Release
 cmake --build build
