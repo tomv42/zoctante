@@ -134,6 +134,7 @@ int main() {
 
     GuiSetStyle(DEFAULT, TEXT_SIZE, scale * 8);
     GuiSetStyle(VALUEBOX, TEXT_PADDING, 10);
+    GuiSetStyle(VALUEBOX, BORDER_WIDTH, 0);
 
     int monitor = 1;
     const char *monitor_name = GetMonitorName(monitor);
@@ -238,7 +239,7 @@ int main() {
                     10 * base_scale,
                     10 * base_scale,
                 };
-                if (GuiValueBox(scale_box, "Scale:", &new_scale, 0, 5, edit_scale)) {
+                if (GuiValueBox(scale_box, "Scale:", &new_scale, 1, 4, edit_scale)) {
                     edit_scale = !edit_scale;
                 } else {
                     if (!edit_scale && new_scale != scale) {
