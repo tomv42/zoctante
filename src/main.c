@@ -202,6 +202,8 @@ int main() {
 
     bool update_screen = false;
 
+    int tilt_bounce = 0; // in frames
+
     // Gui variables
     bool edit_scale = false;
     bool paused = false;
@@ -210,7 +212,7 @@ int main() {
 
     const int nb_tabs = 3;
     const char *tab_text[3] = {"settings", "controls", "debug"};
-    int active_tab = 0;
+    int active_tab = 1;
 
     while (!WindowShouldClose()) {
 
@@ -262,9 +264,18 @@ int main() {
             ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)));
 
             // tilt
-            /* DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){0, 0}, 10, WHITE); */
-
-            DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){scale * 256, 0}, -90, WHITE);
+            if (IsKeyDown(KEY_T)) {
+                tilt_bounce = 330;
+            } else {
+                if (tilt_bounce > 0) {
+                    tilt_bounce--;
+                }
+            }
+            if (tilt_bounce != 0) {
+                DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){0, 0}, 10, WHITE);
+            } else {
+                DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){scale * 256, 0}, -90, WHITE);
+            }
 
             DrawFPS(10, 10);
 
@@ -286,15 +297,12 @@ int main() {
                 };
                 if (GuiValueBox(scale_box, "Scale:", &new_scale, 1, 4, edit_scale)) {
                     edit_scale = !edit_scale;
-                    paused = true;
+                    paused = edit_scale;
                 } else {
                     if (!edit_scale && new_scale != scale) {
                         scale = new_scale;
                         game_window_width = 224 * scale;
                         game_window_height = 256 * scale;
-                    }
-                    if (!edit_scale) {
-                        paused = false;
                     }
                 }
             } else if (active_tab == 1) {
