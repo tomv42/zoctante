@@ -137,8 +137,9 @@ int main() {
     GuiSetStyle(DEFAULT, TEXT_SIZE, scale * 7);
     GuiSetStyle(VALUEBOX, TEXT_PADDING, 10);
     GuiSetStyle(VALUEBOX, BORDER_WIDTH, 0);
+    GuiSetStyle(CHECKBOX, TEXT_PADDING, 16);
 
-    int monitor = 1;
+    int monitor = 0;
     const char *monitor_name = GetMonitorName(monitor);
     Vector2 monitor_pos = GetMonitorPosition(monitor);
     int monitor_height = GetMonitorHeight(monitor);
@@ -207,6 +208,7 @@ int main() {
     // Gui variables
     bool edit_scale = false;
     bool paused = false;
+    bool display_fps = false;
 
     int new_scale = scale;
 
@@ -278,7 +280,9 @@ int main() {
                 DrawTexturePro(texture, (Rectangle){0, 0, 256, 224}, (Rectangle){0, 0, scale * 256, scale * 224}, (Vector2){scale * 256, 0}, -90, WHITE);
             }
 
-            DrawFPS(10, 10);
+            if (display_fps) {
+                DrawFPS(10, 10);
+            }
 
             Rectangle tab_bounds = {
                 224 * base_scale + 6 * base_scale,
@@ -292,12 +296,12 @@ int main() {
             if (active_tab == 0) {
 
                 Rectangle scale_box = {
-                    224 * base_scale + 6 * base_scale + (float)MeasureText("scale = ", GuiGetStyle(DEFAULT, TEXT_SIZE)),
+                    224 * base_scale + 6 * base_scale + (float)MeasureText("scale =", GuiGetStyle(DEFAULT, TEXT_SIZE)),
                     6 * base_scale + 16 * base_scale,
                     10 * base_scale,
                     10 * base_scale,
                 };
-                if (GuiValueBox(scale_box, "scale = ", &new_scale, 1, 4, edit_scale)) {
+                if (GuiValueBox(scale_box, "scale =", &new_scale, 1, 4, edit_scale)) {
                     edit_scale = !edit_scale;
                 } else {
                     if (!edit_scale && new_scale != scale) {
@@ -311,7 +315,7 @@ int main() {
                 }
 
                 Rectangle speed_slider_box = {
-                    224 * base_scale + 6 * base_scale + (float)MeasureText("speed ", GuiGetStyle(DEFAULT, TEXT_SIZE)),
+                    224 * base_scale + 6 * base_scale + (float)MeasureText("speed ", GuiGetStyle(DEFAULT, TEXT_SIZE)) - (float)GuiGetStyle(SLIDER, TEXT_PADDING),
                     6 * base_scale + 2 * 16 * base_scale,
                     90 * base_scale,
                     10 * base_scale,
@@ -346,6 +350,14 @@ int main() {
                     GuiLabel(control_box, controls_text[i]);
                     control_box.y += 16 * base_scale;
                 }
+            } else if (active_tab == 2) {
+                Rectangle fps_checkbox_box = {
+                    224 * base_scale + 6 * base_scale, // + (float)MeasureText("display fps ", GuiGetStyle(DEFAULT, TEXT_SIZE)) - (float)GuiGetStyle(CHECKBOX, TEXT_PADDING),
+                    6 * base_scale + 16 * base_scale,
+                    6 * base_scale,
+                    6 * base_scale,
+                };
+                GuiCheckBox(fps_checkbox_box, "display fps ", &display_fps);
             }
 
             EndDrawing();
