@@ -214,12 +214,10 @@ int main() {
     GuiSetStyle(CHECKBOX, TEXT_PADDING, 16);
 
     int monitor = 0;
-    const char *monitor_name = GetMonitorName(monitor);
     Vector2 monitor_pos = GetMonitorPosition(monitor);
     int monitor_height = GetMonitorHeight(monitor);
     int monitor_width = GetMonitorWidth(monitor);
 
-    printf("monitor %s=%d", monitor_name, monitor);
     SetWindowMonitor(monitor);
 
     int window_x = (int)monitor_pos.x + (monitor_width - window_width) / 2;
@@ -273,6 +271,7 @@ int main() {
     // initialisation
     // advance emulation until the first interrupt
     // it's always the same amount of in game time dt
+    load_high_score(state);
     advance_emulation(dt, machine);
     time = GetTime();
     last_interrupt_time = time - interrupt_delay;
@@ -486,6 +485,8 @@ int main() {
             EndDrawing();
         }
     }
+
+    save_high_score(state);
 
     UnloadTexture(texture);
     free_machine(machine);

@@ -1,6 +1,7 @@
 #ifndef H_MACHINE
 #define H_MACHINE
 
+#include "8080.h"
 #include "raylib.h"
 #include <stdint.h>
 
@@ -30,5 +31,7 @@ void free_machine(SpaceInvadersMachine *machine);
 void EmulateMachineIn(SpaceInvadersMachine *machine, uint8_t port);
 void EmulateMachineOut(SpaceInvadersMachine *machine, uint8_t port);
 void emulate_machines_input(SpaceInvadersMachine *machine);
+void load_high_score(State8080 *state);
+void save_high_score(State8080 *state);
 
 #endif

@@ -61,6 +61,7 @@ build/
 
 # Other
 raygui-4.0/
+high_score.txt
 
 # Helper scripts
 *.sh

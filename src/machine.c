@@ -1,6 +1,5 @@
 #include "machine.h"
-#include "8080.h"
-#include "raylib.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -77,21 +76,6 @@ void EmulateMachineOut(SpaceInvadersMachine *machine, uint8_t port) {
     State8080 *state = machine->state;
     state->pc += 2; // opcode + port
     switch (port) {
-    /* case 1: { */
-    /*     uint8_t operation = state->c; */
-    /**/
-    /*     if (operation == 2) { // print a character stored in E */
-    /*         printf("%c", state->e); */
-    /*     } else if (operation == 9) { // print from memory at (DE) until '$' char */
-    /*         uint16_t addr = (state->d << 8) | state->e; */
-    /*         do { */
-    /*             // printf("%c", rb(state, addr++)); */
-    /*             printf("%c", state->memory[addr++]); */
-    /**/
-    /*             // } while (rb(state, addr) != '$'); */
-    /*         } while (state->memory[addr] != '$'); */
-    /*     } */
-    /* } break; */
     case 2:
         machine->hardware_shift.shift_offset = state->a & 7;
         break;
@@ -195,4 +179,60 @@ void emulate_machines_input(SpaceInvadersMachine *machine) {
     // take care of the inputs that affects ports
     update_ports_from_input(&machine->ports);
     // other inputs
+}
+
+#define HIGH_SCORE_FILENAME "high_score.txt"
+
+static uint16_t get_high_score_from_file() {
+    uint16_t high_score;
+    FILE *f = fopen(HIGH_SCORE_FILENAME, "rb");
+
+    if (f == NULL) {
+        high_score = 0;
+    } else {
+        size_t nb_read = fread(&high_score, 2, 1, f);
+        if (nb_read != 1) {
+            printf("error: Couldn't read high score from high score file\n");
+            exit(1);
+        }
+        fclose(f);
+    }
+
+    return high_score;
+}
+
+void load_high_score(State8080 *state) {
+    uint16_t high_score = get_high_score_from_file();
+
+    uint8_t high_score_low = high_score & 0xff;
+    uint8_t high_score_high = (high_score >> 8) & 0xff;
+
+    // at the start of a new game, the RAM mirror is copied from 1B00-1BBF to initialize RAM at 2000-20BF
+    // and the high score is saved at 20B4
+    // that means, we need to set it at 0x1BF4
+    state->memory[0x1BF4] = high_score_low;
+    state->memory[0x1BF5] = high_score_high;
+}
+
+void save_high_score(State8080 *state) {
+    uint8_t high_score_low = state->memory[0x20F4];
+    uint8_t high_score_high = state->memory[0x20F5];
+    uint16_t high_score = (high_score_high << 8) | high_score_low;
+    uint16_t file_high_score = get_high_score_from_file();
+
+    if (high_score > file_high_score) {
+        FILE *f = fopen(HIGH_SCORE_FILENAME, "wb");
+
+        if (f == NULL) {
+            printf("error: Couldn't open high score file\n");
+            exit(1);
+        }
+
+        size_t nb_written = fwrite(&high_score, 2, 1, f);
+        if (nb_written != 1) {
+            printf("error: Couldn't write high score to high score file\n");
+            exit(1);
+        }
+        fclose(f);
+    }
 }
