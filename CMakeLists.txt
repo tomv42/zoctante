@@ -33,9 +33,7 @@ endif()
 set(SOURCES
     src/main.c
     src/8080.c
-    src/comparison.c
     src/machine.c
-    src/i8080.c
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -59,9 +57,7 @@ add_custom_command(
 set(SOURCES
     src/test.c
     src/8080.c
-    src/comparison.c
     src/test_machine.c
-    src/i8080.c
 )
 
 add_executable(test ${SOURCES})
