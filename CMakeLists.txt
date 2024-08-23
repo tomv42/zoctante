@@ -49,8 +49,6 @@ add_custom_command(
     ARGS -E copy $<TARGET_FILE:${PROJECT_NAME}> ${CMAKE_SOURCE_DIR}
     COMMAND ${CMAKE_COMMAND}
     ARGS -E rm $<TARGET_FILE:${PROJECT_NAME}>
-    COMMAND ${CMAKE_COMMAND}
-    ARGS -E echo ${CMAKE_C_FLAGS}
 )
 
 # test
@@ -71,30 +69,26 @@ add_custom_command(
     ARGS -E copy $<TARGET_FILE:test> ${CMAKE_SOURCE_DIR}
     COMMAND ${CMAKE_COMMAND}
     ARGS -E rm $<TARGET_FILE:test>
-    COMMAND ${CMAKE_COMMAND}
-    ARGS -E echo ${CMAKE_C_FLAGS}
 )
 
 # example
 
-set(SOURCES
-    ./raygui-4.0/examples/floating_window/floating_window.c
-)
-
-add_executable(example ${SOURCES})
-target_include_directories(example PUBLIC ./raygui-4.0/examples/)
-target_link_libraries(example raylib)
-
-add_custom_command(
-    TARGET example
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND}
-    ARGS -E copy $<TARGET_FILE:example> ${CMAKE_SOURCE_DIR}
-    COMMAND ${CMAKE_COMMAND}
-    ARGS -E rm $<TARGET_FILE:example>
-    COMMAND ${CMAKE_COMMAND}
-    ARGS -E echo ${CMAKE_C_FLAGS}
-)
+# set(SOURCES
+#     ./raygui-4.0/examples/floating_window/floating_window.c
+# )
+#
+# add_executable(example ${SOURCES})
+# target_include_directories(example PUBLIC ./raygui-4.0/examples/)
+# target_link_libraries(example raylib)
+#
+# add_custom_command(
+#     TARGET example
+#     POST_BUILD
+#     COMMAND ${CMAKE_COMMAND}
+#     ARGS -E copy $<TARGET_FILE:example> ${CMAKE_SOURCE_DIR}
+#     COMMAND ${CMAKE_COMMAND}
+#     ARGS -E rm $<TARGET_FILE:example>
+# )
 
 
 # Web Configurations
