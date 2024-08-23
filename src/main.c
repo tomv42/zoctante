@@ -318,7 +318,7 @@ int main() {
                         colorize_screen_buffer(screen_buffer);
                     }
 
-                    UpdateTexture(texture, image.data);
+                    UpdateTexture(texture, screen_buffer);
                 }
 
                 // Handle input for the next frame
@@ -432,10 +432,10 @@ int main() {
                     if (colour_temp != colour_display) {
                         if (colour_display) {
                             colorize_screen_buffer(screen_buffer);
-                            UpdateTexture(texture, image.data);
+                            UpdateTexture(texture, screen_buffer);
                         } else {
                             decolorize_screen_buffer(screen_buffer);
-                            UpdateTexture(texture, image.data);
+                            UpdateTexture(texture, screen_buffer);
                         }
                     }
 
