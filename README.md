@@ -1,10 +1,19 @@
 # zoctante
 
-Yet another 8080 emulator written in C.
+Yet another Space Invaders emulator, including yet another 8080 emulator written in C.
 
 > 8080 = deux octantes = 2 zoctantes
 
 ![main screen screenshot](./space-invaders.png)
+
+# Features
+
+- Full emulation of the Intel 8080 that passes all the available test roms
+- Colour graphics (can switch to black and white)
+- Inputs
+- Sounds (from audio files)
+- Automatic saving of the high score upon exit
+- Speed control
 
 # How to run it
 
@@ -24,6 +33,8 @@ And finally run it with
 
 | Keyboard | Space Invaders                                 |
 | -------- | ---------------------------------------------- |
+| tab      | play/pause                                     |
+| esc      | quit                                           |
 | c        | insert a coin                                  |
 | 1        | start a game in one-player mode                |
 | 2        | start a game in two-player mode                |
